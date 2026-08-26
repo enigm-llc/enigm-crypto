@@ -1,0 +1,58 @@
+{
+  "name": "@enigm/crypto",
+  "version": "0.1.0",
+  "description": "Auditable hybrid post-quantum cryptographic core for Enigm clients",
+  "sideEffects": false,
+  "keywords": [
+    "enigm",
+    "cryptography",
+    "post-quantum",
+    "ml-kem",
+    "ml-dsa",
+    "end-to-end-encryption"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "react-native": "./dist-cjs/index.js",
+      "import": "./dist/index.js",
+      "require": "./dist-cjs/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "dist-cjs",
+    "src",
+    "docs",
+    "README.md",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test test/*.test.ts",
+    "benchmark": "tsx test/benchmark.ts",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "dependencies": {
+    "@noble/ciphers": "2.3.0",
+    "@noble/curves": "2.3.0",
+    "@noble/hashes": "2.3.0",
+    "@noble/post-quantum": "0.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.11",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  },
+  "license": "Apache-2.0"
+}
