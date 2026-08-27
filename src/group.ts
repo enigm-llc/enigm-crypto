@@ -29,12 +29,27 @@ const canonicalMembers = (memberDeviceIds: readonly string[]): Uint8Array => {
 const deriveMembersHash = (memberDeviceIds: readonly string[]): Uint8Array =>
   sha256(frame(utf8('enigm-pq-v2-group-members'), canonicalMembers(memberDeviceIds)));
 
+export const validateGroupEpochState = (state: GroupEpochState): void => {
+  if (
+    state.version !== PROTOCOL_VERSION ||
+    !Number.isSafeInteger(state.epoch) ||
+    state.epoch < 1 ||
+    state.groupId.length < 16 ||
+    state.groupId.length > 128
+  ) {
+    throw new Error('Invalid group epoch state.');
+  }
+  assertLength(state.epochSecret, 32, 'Group epoch secret');
+  assertLength(state.membersHash, 32, 'Group members hash');
+};
+
 export const createGroupEpoch = (
   groupId: Uint8Array,
   memberDeviceIds: readonly string[],
   randomSource: RandomSource = randomBytes,
 ): GroupEpochState => {
   if (groupId.length < 16 || groupId.length > 128) throw new Error('Invalid group identifier.');
+  const membersHash = deriveMembersHash(memberDeviceIds);
   const secret = randomSource(32);
   assertLength(secret, 32, 'Group epoch secret');
   return {
@@ -42,7 +57,7 @@ export const createGroupEpoch = (
     groupId: clone(groupId),
     epoch: 1,
     epochSecret: secret,
-    membersHash: deriveMembersHash(memberDeviceIds),
+    membersHash,
   };
 };
 
@@ -51,9 +66,9 @@ export const rotateGroupEpoch = (
   memberDeviceIds: readonly string[],
   randomSource: RandomSource = randomBytes,
 ): GroupEpochState => {
-  if (previous.version !== PROTOCOL_VERSION || !Number.isSafeInteger(previous.epoch) || previous.epoch < 1) {
-    throw new Error('Invalid group epoch state.');
-  }
+  validateGroupEpochState(previous);
+  if (previous.epoch >= 0xffff_ffff) throw new Error('Group epoch is exhausted.');
+  const membersHash = deriveMembersHash(memberDeviceIds);
   const secret = randomSource(32);
   assertLength(secret, 32, 'Group epoch secret');
   wipe(previous.epochSecret);
@@ -62,13 +77,12 @@ export const rotateGroupEpoch = (
     groupId: clone(previous.groupId),
     epoch: previous.epoch + 1,
     epochSecret: secret,
-    membersHash: deriveMembersHash(memberDeviceIds),
+    membersHash,
   };
 };
 
 const groupKey = (state: GroupEpochState, purpose: GroupEpochCiphertext['purpose']): Uint8Array => {
-  assertLength(state.epochSecret, 32, 'Group epoch secret');
-  assertLength(state.membersHash, 32, 'Group members hash');
+  validateGroupEpochState(state);
   return hmac(
     sha512,
     state.epochSecret,

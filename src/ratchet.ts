@@ -41,7 +41,7 @@ const deriveStep = (state: ChainState): { messageKey: Uint8Array; next: ChainSta
   const chainKey = hmac(sha512, state.chainKey, frame(utf8('next-chain-key'), counter)).slice(0, 32);
   return {
     messageKey,
-    next: { ...state, counter: state.counter + 1, chainKey },
+    next: { ...state, chainId: clone(state.chainId), counter: state.counter + 1, chainKey },
   };
 };
 
@@ -86,11 +86,12 @@ export const ratchetEncrypt = (
 ): { message: RatchetCiphertext; next: ChainState } => {
   const { messageKey, next } = deriveStep(state);
   const nonce = randomSource(12);
+  assertLength(nonce, 12, 'Ratchet nonce');
   try {
     return {
       message: {
         version: PROTOCOL_VERSION,
-        chainId: state.chainId,
+        chainId: clone(state.chainId),
         counter: state.counter,
         nonce,
         ciphertext: gcm(

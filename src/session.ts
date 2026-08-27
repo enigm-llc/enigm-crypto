@@ -27,7 +27,7 @@ const sessionContext = (context: Uint8Array, epoch: number): Uint8Array =>
 const directionalContext = (context: Uint8Array, direction: 'initiator' | 'responder'): Uint8Array =>
   frame(context, utf8(direction));
 
-const validateState = (state: SessionState): void => {
+export const validateSessionState = (state: SessionState): void => {
   if (
     state.version !== PROTOCOL_VERSION ||
     !Number.isSafeInteger(state.epoch) ||
@@ -38,6 +38,25 @@ const validateState = (state: SessionState): void => {
   }
   assertLength(state.sessionId, 32, 'Session identifier');
   assertLength(state.rootKey, 32, 'Session root key');
+  assertLength(state.send.chainId, 16, 'Send chain identifier');
+  assertLength(state.send.chainKey, 32, 'Send chain key');
+  assertLength(state.receive.chainId, 16, 'Receive chain identifier');
+  assertLength(state.receive.chainKey, 32, 'Receive chain key');
+  if (
+    !Number.isSafeInteger(state.send.counter) ||
+    state.send.counter < 0 ||
+    !Number.isSafeInteger(state.receive.counter) ||
+    state.receive.counter < 0
+  ) {
+    throw new Error('Invalid session chain counter.');
+  }
+  for (const skipped of state.skipped) {
+    assertLength(skipped.chainId, 16, 'Skipped chain identifier');
+    assertLength(skipped.messageKey, 32, 'Skipped message key');
+    if (!Number.isSafeInteger(skipped.counter) || skipped.counter < 0) {
+      throw new Error('Invalid skipped message counter.');
+    }
+  }
 };
 
 export const initializeSession = (
@@ -67,7 +86,7 @@ export const sessionEncrypt = (
   context: Uint8Array,
   randomSource?: RandomSource,
 ): { message: RatchetCiphertext; next: SessionState } => {
-  validateState(state);
+  validateSessionState(state);
   const encrypted = ratchetEncrypt(
     state.send,
     plaintext,
@@ -85,7 +104,7 @@ export const sessionDecrypt = (
   message: RatchetCiphertext,
   context: Uint8Array,
 ): { plaintext: Uint8Array; next: SessionState } => {
-  validateState(state);
+  validateSessionState(state);
   const existingIndex = skippedIndex(state.skipped, message);
   if (existingIndex >= 0) {
     const existing = state.skipped[existingIndex];
@@ -138,7 +157,7 @@ export const rekeySession = (
   context: Uint8Array,
   role: SessionRole,
 ): SessionState => {
-  validateState(state);
+  validateSessionState(state);
   if (freshHybridSecret.length < 32) throw new Error('A fresh hybrid secret is required for rekeying.');
   const epoch = state.epoch + 1;
   const rootKey = hmac(

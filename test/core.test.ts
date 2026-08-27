@@ -67,6 +67,46 @@ test('hybrid envelope round-trips and binds context', () => {
   );
 });
 
+test('an envelope created before bundle expiry remains decryptable after delayed delivery', () => {
+  const createdAt = Date.now();
+  const alice = generateIdentity();
+  const bob = generateIdentity();
+  const bobKem = generateKemBundle(bob, createdAt + 1_000);
+  const context = utf8('conversation:delayed-delivery');
+  const envelope = seal({
+    sender: alice,
+    recipientIdentity: publicIdentity(bob),
+    recipient: publicKemBundle(bobKem),
+    plaintext: utf8('delayed'),
+    context,
+    now: createdAt,
+  });
+
+  assert.equal(
+    new TextDecoder().decode(
+      open({
+        sender: publicIdentity(alice),
+        recipientIdentity: publicIdentity(bob),
+        recipient: bobKem,
+        envelope,
+        context,
+        now: createdAt + 30 * 24 * 60 * 60 * 1_000,
+      }),
+    ),
+    'delayed',
+  );
+  assert.throws(() =>
+    open({
+      sender: publicIdentity(alice),
+      recipientIdentity: publicIdentity(bob),
+      recipient: bobKem,
+      envelope: { ...envelope, createdAt: bobKem.expiresAt },
+      context,
+      now: createdAt + 30 * 24 * 60 * 60 * 1_000,
+    }),
+  );
+});
+
 test('tampering either signature or ciphertext fails closed', () => {
   const alice = generateIdentity();
   const bob = generateIdentity();
@@ -185,6 +225,17 @@ test('symmetric chain advances and rejects replay', () => {
   wipe(root, sender.chainKey, receiver.chainKey);
 });
 
+test('ratchet encryption rejects an invalid nonce without advancing caller state', () => {
+  const root = new Uint8Array(32).fill(9);
+  const context = utf8('conversation:invalid-nonce');
+  const sender = initializeChain(root, context);
+  assert.throws(
+    () => ratchetEncrypt(sender, utf8('hello'), context, () => new Uint8Array(11)),
+    /Ratchet nonce/,
+  );
+  assert.equal(sender.counter, 0);
+});
+
 test('device session supports bounded out-of-order delivery and rejects replay', () => {
   const root = new Uint8Array(32).fill(4);
   const context = utf8('conversation:session');
@@ -240,6 +291,41 @@ test('group membership rotation encrypts metadata and excludes new members from 
   assert.equal(new TextDecoder().decode(decryptGroupEpoch(next, nextMetadata)).includes('photo'), true);
   assert.throws(() => decryptGroupEpoch(next, oldMetadata));
   assert.equal(new TextDecoder().decode(decryptGroupEpoch(retainedOldState, oldMetadata)), '{"name":"A"}');
+});
+
+test('failed group rotation preserves the current epoch secret', () => {
+  const state = createGroupEpoch(utf8('group-identifier-0002'), ['alice:a']);
+  const secret = new Uint8Array(state.epochSecret);
+  assert.throws(() => rotateGroupEpoch(state, ['alice:a', 'alice:a']), /duplicate/);
+  assert.deepEqual(state.epochSecret, secret);
+});
+
+test('public key projections do not expose mutable private identity storage', () => {
+  const identity = generateIdentity();
+  const identityView = publicIdentity(identity);
+  const originalIdentityByte = identity.keyId[0];
+  identityView.keyId[0] ^= 0xff;
+  assert.equal(identity.keyId[0], originalIdentityByte);
+
+  const bundle = generateKemBundle(identity, Date.now() + 60_000);
+  const bundleView = publicKemBundle(bundle);
+  const originalBundleByte = bundle.signature.mlDsa[0];
+  bundleView.signature.mlDsa[0] ^= 0xff;
+  assert.equal(bundle.signature.mlDsa[0], originalBundleByte);
+
+  const originalKeyIdByte = identity.keyId[0];
+  bundle.identityKeyId[0] ^= 0xff;
+  assert.equal(identity.keyId[0], originalKeyIdByte);
+});
+
+test('ratchet ciphertext does not expose mutable chain state', () => {
+  const root = new Uint8Array(32).fill(3);
+  const context = utf8('conversation:immutable-wire');
+  const sender = initializeChain(root, context);
+  const encrypted = ratchetEncrypt(sender, utf8('hello'), context);
+  const nextChainId = new Uint8Array(encrypted.next.chainId);
+  encrypted.message.chainId[0] ^= 0xff;
+  assert.deepEqual(encrypted.next.chainId, nextChainId);
 });
 
 test('one content ciphertext can be wrapped independently for multiple device sessions', () => {

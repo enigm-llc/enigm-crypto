@@ -30,7 +30,7 @@ export const generateKemBundle = (
       keyId: kemKeyId(mlKem.publicKey, classical.publicKey),
       mlKemPublicKey: clone(mlKem.publicKey),
       x25519PublicKey: clone(classical.publicKey),
-      identityKeyId: identity.keyId,
+      identityKeyId: clone(identity.keyId),
       expiresAt,
     } as const;
     return {
@@ -47,12 +47,15 @@ export const generateKemBundle = (
 export const publicKemBundle = (bundle: PrivateKemBundle): PublicKemBundle => ({
   version: bundle.version,
   suite: bundle.suite,
-  keyId: bundle.keyId,
-  mlKemPublicKey: bundle.mlKemPublicKey,
-  x25519PublicKey: bundle.x25519PublicKey,
-  identityKeyId: bundle.identityKeyId,
+  keyId: clone(bundle.keyId),
+  mlKemPublicKey: clone(bundle.mlKemPublicKey),
+  x25519PublicKey: clone(bundle.x25519PublicKey),
+  identityKeyId: clone(bundle.identityKeyId),
   expiresAt: bundle.expiresAt,
-  signature: bundle.signature,
+  signature: {
+    mlDsa: clone(bundle.signature.mlDsa),
+    ed25519: clone(bundle.signature.ed25519),
+  },
 });
 
 export const validatePrivateKemBundle = (bundle: PrivateKemBundle): void => {

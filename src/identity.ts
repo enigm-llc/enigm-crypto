@@ -36,9 +36,9 @@ export const generateIdentity = (randomSource: RandomSource = randomBytes): Priv
 export const publicIdentity = (identity: PrivateIdentity): PublicIdentity => ({
   version: identity.version,
   suite: identity.suite,
-  keyId: identity.keyId,
-  mlDsaPublicKey: identity.mlDsaPublicKey,
-  ed25519PublicKey: identity.ed25519PublicKey,
+  keyId: clone(identity.keyId),
+  mlDsaPublicKey: clone(identity.mlDsaPublicKey),
+  ed25519PublicKey: clone(identity.ed25519PublicKey),
 });
 
 export const signHybrid = (identity: PrivateIdentity, message: Uint8Array): HybridSignature => {

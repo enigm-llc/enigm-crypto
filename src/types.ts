@@ -48,6 +48,7 @@ export type HybridEnvelope = {
   mlKemCiphertext: Uint8Array;
   ephemeralX25519PublicKey: Uint8Array;
   nonce: Uint8Array;
+  createdAt: number;
   ciphertext: Uint8Array;
   supplementalSecretUsed: boolean;
   signature: HybridSignature;

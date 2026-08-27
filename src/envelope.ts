@@ -6,12 +6,13 @@ import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
 import { randomBytes } from '@noble/post-quantum/utils.js';
 
 import { CIPHER_SUITE, PROTOCOL_VERSION, type HybridEnvelope, type OpenOptions, type SealOptions } from './types.js';
-import { assertLength, equal, frame, utf8, wipe } from './bytes.js';
+import { assertLength, clone, equal, frame, utf8, wipe } from './bytes.js';
 import { signHybrid, validatePrivateIdentity, validatePublicIdentity, verifyHybrid } from './identity.js';
 import { validatePrivateKemBundle, verifyKemBundle } from './kem.js';
 import { envelopeAssociatedData, envelopeSignatureTranscript } from './transcript.js';
 
 const ZERO_SALT = new Uint8Array(sha512.outputLen);
+const MAX_FUTURE_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 const rejectZeroX25519Secret = (secret: Uint8Array): void => {
   let aggregate = 0;
@@ -55,12 +56,14 @@ export const seal = (options: SealOptions): HybridEnvelope => {
   const encapsulated = ml_kem768.encapsulate(options.recipient.mlKemPublicKey, randomSource(32));
   const classicalSecret = x25519.getSharedSecret(ephemeral.secretKey, options.recipient.x25519PublicKey);
   const nonce = randomSource(12);
+  assertLength(nonce, 12, 'Envelope nonce');
   const unsignedHeader = {
-    senderIdentityKeyId: options.sender.keyId,
-    recipientKemKeyId: options.recipient.keyId,
+    senderIdentityKeyId: clone(options.sender.keyId),
+    recipientKemKeyId: clone(options.recipient.keyId),
     mlKemCiphertext: encapsulated.cipherText,
     ephemeralX25519PublicKey: ephemeral.publicKey,
     nonce,
+    createdAt: now,
     supplementalSecretUsed: options.supplementalSecret !== undefined,
   };
   const associatedData = envelopeAssociatedData(unsignedHeader, options.context);
@@ -95,14 +98,21 @@ export const open = (options: OpenOptions): Uint8Array => {
   if (envelope.version !== PROTOCOL_VERSION || envelope.suite !== CIPHER_SUITE) {
     throw new Error('Unsupported envelope cipher suite.');
   }
-  if (options.recipient.expiresAt <= now) throw new Error('Recipient KEM bundle has expired.');
+  if (
+    !Number.isSafeInteger(envelope.createdAt) ||
+    envelope.createdAt < 0 ||
+    envelope.createdAt >= options.recipient.expiresAt ||
+    envelope.createdAt > now + MAX_FUTURE_CLOCK_SKEW_MS
+  ) {
+    throw new Error('Envelope creation time is invalid.');
+  }
   if (!equal(envelope.senderIdentityKeyId, options.sender.keyId)) {
     throw new Error('Envelope sender identity mismatch.');
   }
   if (!equal(envelope.recipientKemKeyId, options.recipient.keyId)) {
     throw new Error('Envelope recipient key mismatch.');
   }
-  if (!verifyKemBundle(options.recipientIdentity, options.recipient, now)) {
+  if (!verifyKemBundle(options.recipientIdentity, options.recipient, envelope.createdAt)) {
     throw new Error('Recipient KEM bundle signature is invalid.');
   }
   if (envelope.supplementalSecretUsed !== (options.supplementalSecret !== undefined)) {

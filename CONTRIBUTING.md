@@ -9,7 +9,7 @@ to validate than broad refactors.
 2. Add tests for every changed success and failure condition.
 3. Run `npm run check`, `npm test`, `npm run build` and `npm pack --dry-run`.
 4. Explain any wire-format, transcript, suite or state-transition change in the pull request.
-5. Update `docs/PROTOCOL.md` and migration guidance when a protocol-visible value changes.
+5. Update `docs/PROTOCOL.md` when a protocol-visible value changes.
 
 Do not include production keys, user data, provider credentials or private interoperability traces
 in an issue, commit or test fixture. Report suspected vulnerabilities through the process in

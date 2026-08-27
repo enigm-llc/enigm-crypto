@@ -31,6 +31,7 @@ export const envelopeAssociatedData = (
     | 'mlKemCiphertext'
     | 'ephemeralX25519PublicKey'
     | 'nonce'
+    | 'createdAt'
     | 'supplementalSecretUsed'
   >,
   context: Uint8Array,
@@ -45,6 +46,7 @@ export const envelopeAssociatedData = (
     envelope.mlKemCiphertext,
     envelope.ephemeralX25519PublicKey,
     envelope.nonce,
+    u64(envelope.createdAt),
     new Uint8Array([envelope.supplementalSecretUsed ? 1 : 0]),
     sha256(context),
   );

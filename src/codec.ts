@@ -135,6 +135,7 @@ export const encodeEnvelope = (envelope: HybridEnvelope): Uint8Array =>
     envelope.mlKemCiphertext,
     envelope.ephemeralX25519PublicKey,
     envelope.nonce,
+    encodeSafeInteger(envelope.createdAt),
     envelope.ciphertext,
     new Uint8Array([envelope.supplementalSecretUsed ? 1 : 0]),
     envelope.signature.mlDsa,
@@ -150,6 +151,7 @@ export const decodeEnvelope = (encoded: Uint8Array): HybridEnvelope => {
   const mlKemCiphertext = reader.readExact(1088, 'ML-KEM-768 ciphertext');
   const ephemeralX25519PublicKey = reader.readExact(32, 'Ephemeral X25519 public key');
   const nonce = reader.readExact(12, 'Envelope nonce');
+  const createdAt = decodeSafeInteger(reader.readExact(8, 'Envelope creation time'), 'Envelope creation time');
   const ciphertext = reader.read(MAX_FIELD_BYTES);
   const flags = reader.readExact(1, 'Envelope flags');
   if (flags.length !== 1 || (flags[0] !== 0 && flags[0] !== 1)) {
@@ -163,6 +165,7 @@ export const decodeEnvelope = (encoded: Uint8Array): HybridEnvelope => {
     mlKemCiphertext,
     ephemeralX25519PublicKey,
     nonce,
+    createdAt,
     ciphertext,
     supplementalSecretUsed: flags[0] === 1,
     signature: {

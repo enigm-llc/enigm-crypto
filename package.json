@@ -1,7 +1,7 @@
 {
   "name": "@enigm/crypto",
   "version": "0.1.0",
-  "description": "Auditable hybrid post-quantum cryptographic core for Enigm clients",
+  "description": "Portable hybrid post-quantum cryptographic primitives and protocol building blocks",
   "sideEffects": false,
   "keywords": [
     "enigm",
@@ -28,6 +28,7 @@
     "dist-cjs",
     "src",
     "docs",
+    "examples",
     "README.md",
     "SECURITY.md",
     "CONTRIBUTING.md",
@@ -38,6 +39,7 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
     "benchmark": "tsx test/benchmark.ts",
+    "examples": "tsx examples/envelope.ts && tsx examples/session.ts && tsx examples/group-and-content.ts",
     "prepack": "npm run build"
   },
   "engines": {
