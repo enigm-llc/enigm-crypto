@@ -44,7 +44,11 @@ const validateSafeSize = (value: number, label: string): void => {
 };
 
 const validateTextLine = (value: string, label: string): void => {
-  if (!value || /[\u0000-\u001f\u007f]/u.test(value)) throw new Error(`${label} is invalid.`);
+  const hasControlCharacter = Array.from(value).some((character) => {
+    const code = character.charCodeAt(0);
+    return code <= 0x1f || code === 0x7f;
+  });
+  if (!value || hasControlCharacter) throw new Error(`${label} is invalid.`);
 };
 
 const validateKeyName = (value: string): void => {
@@ -426,7 +430,7 @@ export const verifyC2spWitnessCosignature = (
       const encoded = decodeBase64(match[2] ?? '');
       if (encoded.length !== 76 || !equal(encoded.slice(0, 4), expectedId)) continue;
       const timestamp = decodeUint64(encoded.slice(4, 12));
-      if (timestamp > nowSeconds + maximumFutureSkewSeconds) return null;
+      if (timestamp === 0 || timestamp > nowSeconds + maximumFutureSkewSeconds) return null;
       const transcript = utf8(`cosignature/v1\ntime ${timestamp}\n${noteText}`);
       if (ed25519.verify(encoded.slice(12), transcript, witness.publicKey, { zip215: false })) {
         return timestamp;

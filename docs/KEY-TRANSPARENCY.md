@@ -1,16 +1,19 @@
 # Key Transparency
 
-The library exposes two complementary layers:
+The library exposes three complementary layers:
 
 1. A private event transcript with opaque account and device commitments, a monotonic sequence and
    hybrid-signed checkpoints.
 2. An RFC 6962 append-only Merkle tree with inclusion proofs, consistency proofs and C2SP signed
    checkpoints for interoperable public witnessing.
+3. An authenticated current-state map whose root is committed by every new log entry. Membership
+   proofs show whether an identity is currently active or revoked at the checkpoint being verified.
 
-Neither layer publishes account names, device identifiers or a searchable identity directory.
+None of these layers publishes account names, device identifiers or a searchable identity directory.
 Applications should publish only a 32-byte commitment for each canonical private event. An
 authorized identity lookup returns the event preimage and its inclusion proof to the client that is
-allowed to inspect that identity.
+allowed to inspect that identity. That response should include both the activation inclusion proof
+and a membership proof against the current-state root anchored by the latest log entry.
 
 ## Append
 
@@ -21,6 +24,23 @@ as the identity change.
 
 The frontier makes append cost logarithmic. Persisted nodes allow proofs to be assembled without
 loading the complete history.
+
+## Current state
+
+An inclusion proof only establishes that an activation or revocation was recorded at some point.
+It does not establish the current status by itself. Use `keyTransparencyStateNodeHash` to construct
+an authenticated ordered map keyed by opaque identity commitments. Store the node action and child
+hashes, and commit the resulting root with `keyTransparencyLogEntry`.
+
+For an identity lookup, verify:
+
+- inclusion of the requested activation entry;
+- inclusion of the latest entry that anchors the current-state root;
+- an `ACTIVATE` membership proof against that exact root;
+- one common signed checkpoint and witness policy for both inclusion proofs.
+
+`verifyKeyTransparencyStateMembership` verifies the portable proof. Tree balancing, transactional
+storage and authorization of private lookup material remain application responsibilities.
 
 ## Checkpoint
 
@@ -39,7 +59,8 @@ Store and serve their timestamped cosignatures with the checkpoint. Clients veri
 - the log signature;
 - the configured witness quorum;
 - consistency with the last locally accepted checkpoint;
-- inclusion of the identity event they are about to trust.
+- inclusion of the identity event they are about to trust;
+- the authenticated current state of that identity.
 
 An unavailable witness should not invalidate an already verified identity. A new identity or key
 rotation should remain pending until the configured witness policy is satisfied. Conflicting roots

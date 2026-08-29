@@ -92,6 +92,7 @@ The public-log integration contract is documented in
 | `codec` | Canonical binary wire encoding and strict decoding |
 | `transparency` | Hash-chained key events, hybrid checkpoints and gossip observations |
 | `transparency-log` | Incremental RFC 6962 trees, proofs and C2SP signed checkpoints |
+| `transparency-state` | Authenticated current identity state and membership proofs |
 
 ## Integration requirements
 
