@@ -74,6 +74,8 @@ const plaintext = open({
 
 See the executable [examples](examples) for envelopes, bidirectional sessions, group epoch
 rotation, large-content encryption, sealed senders and signed key-transparency checkpoints.
+The public-log integration contract is documented in
+[Key transparency](docs/KEY-TRANSPARENCY.md).
 
 ## API map
 
@@ -88,7 +90,8 @@ rotation, large-content encryption, sealed senders and signed key-transparency c
 | `group` | Group epoch creation, rotation and encrypted epoch payloads |
 | `payload` | AES-256-GCM content keys and ciphertexts |
 | `codec` | Canonical binary wire encoding and strict decoding |
-| `transparency` | Hash-chained key events, signed checkpoints and gossip observations |
+| `transparency` | Hash-chained key events, hybrid checkpoints and gossip observations |
+| `transparency-log` | Incremental RFC 6962 trees, proofs and C2SP signed checkpoints |
 
 ## Integration requirements
 

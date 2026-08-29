@@ -1,10 +1,15 @@
+import { ed25519 } from '@noble/curves/ed25519.js';
+
 import {
+  appendRfc6962Entry,
+  c2spVerifierKey,
   emptyKeyTransparencyCheckpoint,
   extendKeyTransparencyCheckpoint,
   generateIdentity,
   keyTransparencyEventHash,
   observeKeyTransparencyCheckpoint,
   publicIdentity,
+  signC2spCheckpoint,
   signKeyTransparencyCheckpoint,
   verifyKeyTransparencyCheckpoint,
 } from '../src/index.js';
@@ -32,3 +37,18 @@ if (observeKeyTransparencyCheckpoint(trusted, checkpoint) !== 'ADVANCED') {
 }
 process.stdout.write(`head sha256:${Buffer.from(keyTransparencyEventHash(event)).toString('hex')}\n`);
 
+const logSecretKey = crypto.getRandomValues(new Uint8Array(32));
+const logPublicKey = ed25519.getPublicKey(logSecretKey);
+const tree = appendRfc6962Entry([], 0, keyTransparencyEventHash(event));
+const publicCheckpoint = {
+  origin: 'keys.example.test/v1',
+  size: tree.treeSize,
+  rootHash: tree.rootHash,
+};
+const signedNote = signC2spCheckpoint(publicCheckpoint, {
+  name: publicCheckpoint.origin,
+  publicKey: logPublicKey,
+  secretKey: logSecretKey,
+});
+
+process.stdout.write(`${c2spVerifierKey(publicCheckpoint.origin, logPublicKey)}\n${signedNote}`);

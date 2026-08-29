@@ -9,4 +9,5 @@ export * from './ratchet.js';
 export * from './session.js';
 export * from './sealed-sender.js';
 export * from './transparency.js';
+export * from './transparency-log.js';
 export * from './types.js';

@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { ed25519 } from '@noble/curves/ed25519.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+
 import {
+  appendRfc6962Entry,
   decodeEnvelope,
   decodePublicIdentity,
   decodePublicKemBundle,
   decodeSealedSenderEnvelope,
   createGroupEpoch,
+  c2spCheckpointText,
+  c2spVerifierKey,
+  concat,
   decryptGroupEpoch,
   encodeEnvelope,
   encodePublicIdentity,
@@ -30,6 +37,10 @@ import {
   publicKemBundle,
   ratchetDecrypt,
   ratchetEncrypt,
+  rfc6962ConsistencyProof,
+  rfc6962InclusionProof,
+  rfc6962Root,
+  rfc6962RootFromFrontier,
   rekeySession,
   rotateGroupEpoch,
   seal,
@@ -37,9 +48,15 @@ import {
   sessionDecrypt,
   sessionEncrypt,
   signKeyTransparencyCheckpoint,
+  signC2spCheckpoint,
   utf8,
   verifyKemBundle,
   verifyKeyTransparencyCheckpoint,
+  verifyC2spLogSignature,
+  verifyC2spWitnessCosignature,
+  verifyRfc6962Consistency,
+  verifyRfc6962Inclusion,
+  encodeC2spWitnessTimestamp,
   wipe,
 } from '../src/index.ts';
 
@@ -431,4 +448,110 @@ test('key transparency proofs are contiguous, signed and gossip detects equivoca
     }),
   );
   assert.throws(() => extendKeyTransparencyCheckpoint(initial, [{ ...first, sequence: 2 }], 1_300));
+});
+
+test('RFC 6962 inclusion and consistency proofs cover uneven tree sizes', () => {
+  const entries = Array.from({ length: 48 }, (_, index) => utf8(`opaque-event:${index}`));
+
+  for (let size = 1; size <= entries.length; size += 1) {
+    const tree = entries.slice(0, size);
+    const root = rfc6962Root(tree);
+    for (let leafIndex = 0; leafIndex < size; leafIndex += 1) {
+      const proof = rfc6962InclusionProof(tree, leafIndex);
+      assert.equal(
+        verifyRfc6962Inclusion(tree[leafIndex]!, leafIndex, size, root, proof),
+        true,
+      );
+    }
+    for (let oldSize = 1; oldSize <= size; oldSize += 1) {
+      const proof = rfc6962ConsistencyProof(tree, oldSize);
+      assert.equal(
+        verifyRfc6962Consistency(oldSize, size, rfc6962Root(tree.slice(0, oldSize)), root, proof),
+        true,
+      );
+    }
+  }
+
+  const root = rfc6962Root(entries);
+  const proof = rfc6962InclusionProof(entries, 17);
+  const modified = proof.map((hash) => new Uint8Array(hash));
+  modified[0]![0] ^= 0xff;
+  assert.equal(verifyRfc6962Inclusion(entries[17]!, 17, entries.length, root, modified), false);
+});
+
+test('incremental RFC 6962 frontier matches complete tree roots', () => {
+  const entries: Uint8Array[] = [];
+  let frontier: Array<Uint8Array | null> = [];
+  let treeSize = 0;
+
+  assert.deepEqual(rfc6962RootFromFrontier(frontier, treeSize), rfc6962Root(entries));
+  for (let index = 0; index < 256; index += 1) {
+    const entry = sha256(utf8(`entry:${index}`));
+    entries.push(entry);
+    const appended = appendRfc6962Entry(frontier, treeSize, entry);
+    frontier = appended.frontier;
+    treeSize = appended.treeSize;
+
+    assert.equal(treeSize, entries.length);
+    assert.deepEqual(appended.rootHash, rfc6962Root(entries));
+    assert.deepEqual(rfc6962RootFromFrontier(frontier, treeSize), appended.rootHash);
+    assert.equal(appended.createdNodes[0]?.level, 0);
+    assert.equal(appended.createdNodes[0]?.index, index);
+  }
+
+  assert.throws(() => appendRfc6962Entry([], 1, utf8('invalid frontier')));
+});
+
+test('C2SP checkpoints verify log signatures and timestamped witness cosignatures', () => {
+  const logIdentity = generateIdentity();
+  const witnessIdentity = generateIdentity();
+  const checkpoint = {
+    origin: 'keys.example.test/v1',
+    size: 3,
+    rootHash: rfc6962Root([utf8('a'), utf8('b'), utf8('c')]),
+  };
+  const signer = {
+    name: checkpoint.origin,
+    publicKey: logIdentity.ed25519PublicKey,
+    secretKey: logIdentity.ed25519SecretKey,
+  };
+  const signed = signC2spCheckpoint(checkpoint, signer);
+
+  assert.equal(verifyC2spLogSignature(signed, checkpoint, signer), true);
+  assert.match(c2spVerifierKey(signer.name, signer.publicKey), /^keys\.example\.test\/v1\+[0-9a-f]{8}\+/u);
+  assert.equal(
+    verifyC2spLogSignature(signed, { ...checkpoint, size: checkpoint.size + 1 }, signer),
+    false,
+  );
+
+  const witnessName = 'witness.example/eu-1';
+  const timestamp = 1_800_000_000;
+  const witnessKeyId = sha256(
+    concat(utf8(witnessName), new Uint8Array([0x0a, 0x04]), witnessIdentity.ed25519PublicKey),
+  ).slice(0, 4);
+  const transcript = utf8(`cosignature/v1\ntime ${timestamp}\n${c2spCheckpointText(checkpoint)}`);
+  const witnessSignature = ed25519.sign(transcript, witnessIdentity.ed25519SecretKey);
+  const signatureLine = Buffer.from(
+    concat(witnessKeyId, encodeC2spWitnessTimestamp(timestamp), witnessSignature),
+  ).toString('base64');
+  const cosigned = `${signed}\u2014 ${witnessName} ${signatureLine}\n`;
+
+  assert.equal(
+    verifyC2spWitnessCosignature(
+      cosigned,
+      checkpoint,
+      { name: witnessName, publicKey: witnessIdentity.ed25519PublicKey },
+      timestamp,
+    ),
+    timestamp,
+  );
+  assert.equal(
+    verifyC2spWitnessCosignature(
+      cosigned,
+      checkpoint,
+      { name: witnessName, publicKey: witnessIdentity.ed25519PublicKey },
+      timestamp - 301,
+    ),
+    null,
+  );
 });

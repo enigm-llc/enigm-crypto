@@ -74,9 +74,16 @@ A hybrid identity signs checkpoints containing the chain size, head hash and iss
 persist the last accepted checkpoint and reject rollback or a different head at an already observed
 size. Advancing a checkpoint requires every supplied event to be contiguous with the trusted head.
 
-The primitives do not create an append-only public log or prevent one operator from serving split
-views. A deployment needs independently witnessed checkpoints and gossip between clients before it
-can claim protection against equivocation.
+The public-log layer hashes opaque event commitments as RFC 6962 leaves. It provides complete and
+incremental tree construction, inclusion proofs, consistency proofs and C2SP-compatible signed
+checkpoints. The interoperable log signature is Ed25519; the private checkpoint additionally uses
+the hybrid identity signature. These signatures cover different protocol transcripts and are not
+interchangeable.
+
+A deployment must publish the append-only entries and proofs, obtain checkpoint cosignatures from
+independent witnesses and gossip accepted checkpoints between clients before it can claim robust
+protection against operator equivocation. Public entries should contain random-looking commitments,
+never account names, device identifiers or discoverable public-key mappings.
 
 ## Recoverable history
 
