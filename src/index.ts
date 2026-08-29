@@ -7,4 +7,6 @@ export * from './kem.js';
 export * from './payload.js';
 export * from './ratchet.js';
 export * from './session.js';
+export * from './sealed-sender.js';
+export * from './transparency.js';
 export * from './types.js';

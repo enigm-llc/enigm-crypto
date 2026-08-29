@@ -35,6 +35,20 @@ invalid signatures fail closed.
 An optional supplemental secret may be supplied by an independently reviewed provider. It is not
 part of the baseline suite and cannot substitute for ML-KEM-768 or X25519.
 
+## Sender-sealed envelope
+
+A sender-sealed envelope exposes only the recipient KEM key identifier, hybrid encapsulation,
+creation time, nonce, suite and ciphertext. The sender public identity, plaintext and hybrid
+signature are encoded inside that ciphertext. Opening requires the recipient identity and private
+KEM bundle, validates the outer associated data, verifies both inner signatures and optionally
+binds the recovered sender identity to a caller-supplied expected identity. Decoders reject
+oversized fields, trailing bytes, invalid flags, future creation times and missing supplemental
+secrets when the sender selected that policy.
+
+This primitive hides sender identity from a ciphertext-only relay. It does not by itself hide the
+network source, recipient routing token, timing or size. A host protocol must provide anonymous
+admission, abuse resistance and transport unlinkability before claiming sealed-sender delivery.
+
 ## Sessions
 
 An envelope normally protects a fresh session root key. Two domain-separated directional chains
@@ -51,6 +65,18 @@ rekey cadence and recovery behavior around these primitives.
 A group epoch binds one random 256-bit secret to the canonical set of member-device identifiers.
 Separate keys are derived for metadata and messages. Membership changes require a fresh epoch; the
 previous epoch secret is wiped and must not be distributed to newly added members.
+
+## Key transparency
+
+Transparency events form a SHA-256 hash chain over a monotonically increasing sequence, previous
+event hash, opaque account and device commitments, identity key identifier, action and event time.
+A hybrid identity signs checkpoints containing the chain size, head hash and issue time. Clients
+persist the last accepted checkpoint and reject rollback or a different head at an already observed
+size. Advancing a checkpoint requires every supplied event to be contiguous with the trusted head.
+
+The primitives do not create an append-only public log or prevent one operator from serving split
+views. A deployment needs independently witnessed checkpoints and gossip between clients before it
+can claim protection against equivocation.
 
 ## Recoverable history
 

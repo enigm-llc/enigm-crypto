@@ -39,7 +39,9 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
     "benchmark": "tsx test/benchmark.ts",
-    "examples": "tsx examples/envelope.ts && tsx examples/session.ts && tsx examples/group-and-content.ts",
+    "examples": "tsx examples/envelope.ts && tsx examples/session.ts && tsx examples/group-and-content.ts && tsx examples/key-transparency.ts && tsx examples/sealed-sender.ts",
+    "pack:verify": "npm run build && node scripts/verify-reproducible-pack.mjs",
+    "sbom": "npm sbom --package-lock-only --sbom-format cyclonedx --sbom-type library",
     "prepack": "npm run build"
   },
   "engines": {

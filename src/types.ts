@@ -75,6 +75,44 @@ export type OpenOptions = {
   supplementalSecret?: Uint8Array;
 };
 
+export type SealedSenderEnvelope = {
+  version: typeof PROTOCOL_VERSION;
+  suite: CipherSuite;
+  recipientKemKeyId: Uint8Array;
+  mlKemCiphertext: Uint8Array;
+  ephemeralX25519PublicKey: Uint8Array;
+  nonce: Uint8Array;
+  createdAt: number;
+  ciphertext: Uint8Array;
+  supplementalSecretUsed: boolean;
+};
+
+export type SealSenderOptions = {
+  sender: PrivateIdentity;
+  recipientIdentity: PublicIdentity;
+  recipient: PublicKemBundle;
+  plaintext: Uint8Array;
+  context: Uint8Array;
+  now?: number;
+  supplementalSecret?: Uint8Array;
+  randomSource?: RandomSource;
+};
+
+export type OpenSealedSenderOptions = {
+  recipientIdentity: PublicIdentity;
+  recipient: PrivateKemBundle;
+  envelope: SealedSenderEnvelope;
+  context: Uint8Array;
+  expectedSenderIdentity?: PublicIdentity;
+  now?: number;
+  supplementalSecret?: Uint8Array;
+};
+
+export type OpenedSealedSender = {
+  sender: PublicIdentity;
+  plaintext: Uint8Array;
+};
+
 export type ChainState = {
   version: typeof PROTOCOL_VERSION;
   chainId: Uint8Array;

@@ -5,20 +5,27 @@ import {
   decodeEnvelope,
   decodePublicIdentity,
   decodePublicKemBundle,
+  decodeSealedSenderEnvelope,
   createGroupEpoch,
   decryptGroupEpoch,
   encodeEnvelope,
   encodePublicIdentity,
   encodePublicKemBundle,
+  encodeSealedSenderEnvelope,
   generateIdentity,
   generateKemBundle,
   encryptGroupEpoch,
   decryptContent,
+  emptyKeyTransparencyCheckpoint,
   encryptContent,
+  extendKeyTransparencyCheckpoint,
   generateContentKey,
   initializeChain,
   initializeSession,
+  keyTransparencyEventHash,
+  observeKeyTransparencyCheckpoint,
   open,
+  openSealedSender,
   publicIdentity,
   publicKemBundle,
   ratchetDecrypt,
@@ -26,14 +33,65 @@ import {
   rekeySession,
   rotateGroupEpoch,
   seal,
+  sealSender,
   sessionDecrypt,
   sessionEncrypt,
+  signKeyTransparencyCheckpoint,
   utf8,
   verifyKemBundle,
+  verifyKeyTransparencyCheckpoint,
   wipe,
 } from '../src/index.ts';
 
 const future = () => Date.now() + 60_000;
+
+test('sealed sender hides its identity outside the encrypted envelope', () => {
+  const alice = generateIdentity();
+  const mallory = generateIdentity();
+  const bob = generateIdentity();
+  const bobKem = generateKemBundle(bob, future());
+  const context = utf8('sealed-sender:conversation:abc:message:1');
+  const envelope = sealSender({
+    sender: alice,
+    recipientIdentity: publicIdentity(bob),
+    recipient: publicKemBundle(bobKem),
+    plaintext: utf8('private sender'),
+    context,
+  });
+
+  assert.equal('senderIdentityKeyId' in envelope, false);
+  const encodedEnvelope = encodeSealedSenderEnvelope(envelope);
+  const decodedEnvelope = decodeSealedSenderEnvelope(encodedEnvelope);
+  const opened = openSealedSender({
+    recipientIdentity: publicIdentity(bob),
+    recipient: bobKem,
+    envelope: decodedEnvelope,
+    context,
+    expectedSenderIdentity: publicIdentity(alice),
+  });
+  assert.deepEqual(opened.sender.keyId, alice.keyId);
+  assert.equal(new TextDecoder().decode(opened.plaintext), 'private sender');
+  assert.throws(() =>
+    openSealedSender({
+      recipientIdentity: publicIdentity(bob),
+      recipient: bobKem,
+      envelope,
+      context,
+      expectedSenderIdentity: publicIdentity(mallory),
+    }),
+  );
+  const trailing = new Uint8Array(encodedEnvelope.length + 1);
+  trailing.set(encodedEnvelope);
+  assert.throws(() => decodeSealedSenderEnvelope(trailing));
+  assert.throws(() =>
+    openSealedSender({
+      recipientIdentity: publicIdentity(bob),
+      recipient: bobKem,
+      envelope,
+      context: utf8('sealed-sender:conversation:other'),
+    }),
+  );
+});
 
 test('hybrid envelope round-trips and binds context', () => {
   const alice = generateIdentity();
@@ -337,4 +395,40 @@ test('one content ciphertext can be wrapped independently for multiple device se
   assert.equal(new TextDecoder().decode(decryptContent(key, encrypted, context)), 'one payload');
   assert.throws(() => decryptContent(key, encrypted, utf8('conversation:other')));
   wipe(key);
+});
+
+test('key transparency proofs are contiguous, signed and gossip detects equivocation', () => {
+  const signer = generateIdentity();
+  const initial = emptyKeyTransparencyCheckpoint(1_000);
+  const first = {
+    version: 1 as const,
+    sequence: 1,
+    previousHash: initial.headHash,
+    accountCommitment: new Uint8Array(32).fill(1),
+    deviceCommitment: new Uint8Array(32).fill(2),
+    identityKeyId: new Uint8Array(32).fill(3),
+    action: 'ACTIVATE' as const,
+    occurredAt: 1_100,
+  };
+  const second = {
+    ...first,
+    sequence: 2,
+    previousHash: keyTransparencyEventHash(first),
+    identityKeyId: new Uint8Array(32).fill(4),
+    action: 'REVOKE' as const,
+    occurredAt: 1_200,
+  };
+  const checkpoint = extendKeyTransparencyCheckpoint(initial, [first, second], 1_300);
+  const signed = signKeyTransparencyCheckpoint(signer, checkpoint);
+
+  assert.equal(verifyKeyTransparencyCheckpoint(publicIdentity(signer), signed), true);
+  assert.equal(observeKeyTransparencyCheckpoint(initial, checkpoint), 'ADVANCED');
+  assert.equal(observeKeyTransparencyCheckpoint(checkpoint, checkpoint), 'UNCHANGED');
+  assert.throws(() =>
+    observeKeyTransparencyCheckpoint(checkpoint, {
+      ...checkpoint,
+      headHash: new Uint8Array(32).fill(9),
+    }),
+  );
+  assert.throws(() => extendKeyTransparencyCheckpoint(initial, [{ ...first, sequence: 2 }], 1_300));
 });

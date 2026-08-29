@@ -29,6 +29,7 @@ source backed by the operating system.
 - ML-DSA-65 (FIPS 204) and Ed25519 hybrid authentication.
 - HKDF-SHA-512 domain-separated key derivation.
 - AES-256-GCM authenticated encryption with caller-bound associated data.
+- Sender-sealed envelopes with sender identity inside recipient-only ciphertext.
 - Per-message symmetric chain state with bounded out-of-order delivery.
 - Explicit protocol and suite identifiers; unsupported values fail closed.
 - Optional supplemental secret input for an independently reviewed defense-in-depth provider.
@@ -72,7 +73,7 @@ const plaintext = open({
 ```
 
 See the executable [examples](examples) for envelopes, bidirectional sessions, group epoch
-rotation and large-content encryption.
+rotation, large-content encryption, sealed senders and signed key-transparency checkpoints.
 
 ## API map
 
@@ -81,11 +82,13 @@ rotation and large-content encryption.
 | `identity` | Hybrid identity generation, fingerprints, signing and verification |
 | `kem` | Hybrid signed recipient key bundles |
 | `envelope` | Authenticated hybrid key or payload envelopes |
+| `sealed-sender` | Recipient-only sender identity and authenticated payload envelopes |
 | `session` | Directional session state, skipped keys and explicit rekeying |
 | `ratchet` | Low-level symmetric chain operations |
 | `group` | Group epoch creation, rotation and encrypted epoch payloads |
 | `payload` | AES-256-GCM content keys and ciphertexts |
 | `codec` | Canonical binary wire encoding and strict decoding |
+| `transparency` | Hash-chained key events, signed checkpoints and gossip observations |
 
 ## Integration requirements
 
@@ -97,6 +100,7 @@ rotation and large-content encryption.
   authenticated envelope creation time for delayed-delivery validation.
 - Bind `context` to protocol version, conversation, sender device, recipient device, message ID and
   content type.
+- Bind an opened sealed-sender identity to the expected account before accepting its payload.
 - Persist session advancement before acknowledging delivery and reject replayed counters.
 - Rotate a group epoch after every membership change. A newly added member must receive only the
   new epoch secret.
@@ -111,6 +115,8 @@ npm test
 npm run examples
 npm run benchmark
 npm run build
+npm run pack:verify
+npm run --silent sbom > enigm-crypto.cdx.json
 npm pack --dry-run
 ```
 

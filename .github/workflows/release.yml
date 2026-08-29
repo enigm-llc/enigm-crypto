@@ -1,0 +1,41 @@
+name: Release provenance
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run check
+      - run: npm test
+      - run: npm run pack:verify
+      - run: |
+          mkdir release
+          npm pack --ignore-scripts --pack-destination release
+          npm run --silent sbom > release/enigm-crypto.cdx.json
+          sha256sum release/* > release/SHA256SUMS
+      - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+        with:
+          subject-path: release/*.tgz
+      - uses: actions/attest-sbom@10926c72720ffc3f7b666661c8e55b1344e2a365 # v2
+        with:
+          subject-path: release/*.tgz
+          sbom-path: release/enigm-crypto.cdx.json
+      - run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}

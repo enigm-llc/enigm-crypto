@@ -9,12 +9,15 @@
 - Protect plaintext against compromise of a ciphertext-only transport or storage service.
 - Prevent substitution across application contexts that are correctly bound by the caller.
 - Fail closed on an unsupported version, suite, key identifier or supplemental-secret policy.
+- Keep sender identity inside recipient-only ciphertext when using sender-sealed envelopes.
+- Detect checkpoint rollback and same-size equivocation when the host persists trusted state.
 
 ## Outside this module
 
 - A compromised unlocked endpoint while plaintext or active session keys are in memory.
 - Malicious keyboard, screen-capture, accessibility or operating-system components.
 - Traffic analysis, contact-discovery leakage and transport metadata correlation.
+- Split-view transparency attacks when checkpoints are not independently witnessed and gossiped.
 - Rollback or replay when the host does not persist monotonic key and message state.
 - Recovery after compromise until a fresh authenticated secret is mixed into the session.
 - Supply-chain and microarchitectural side channels in the JavaScript runtime.
