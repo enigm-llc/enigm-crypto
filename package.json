@@ -54,7 +54,7 @@
     "@noble/post-quantum": "0.7.0"
   },
   "devDependencies": {
-    "@types/node": "22.19.11",
+    "@types/node": "26.4.0",
     "tsx": "4.20.6",
     "typescript": "5.9.3"
   },
