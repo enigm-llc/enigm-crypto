@@ -29,7 +29,7 @@ jobs:
           npm pack --ignore-scripts --pack-destination release
           npm run --silent sbom > release/enigm-crypto.cdx.json
           sha256sum release/* > release/SHA256SUMS
-      - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2
+      - uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2
         with:
           subject-path: release/*.tgz
       - uses: actions/attest-sbom@10926c72720ffc3f7b666661c8e55b1344e2a365 # v2
