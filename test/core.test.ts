@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { ed25519 } from "@noble/curves/ed25519.js";
-import { sha256 } from "@noble/hashes/sha2.js";
+import { hmac } from "@noble/hashes/hmac.js";
+import { sha256, sha512 } from "@noble/hashes/sha2.js";
+import { frame, u32 } from "../src/bytes.ts";
 
 import {
   appendRfc6962Entry,
@@ -438,6 +440,40 @@ test("device session supports bounded out-of-order delivery and rejects replay",
   assert.throws(() => sessionDecrypt(bob, first.message, context), /Replayed/);
 });
 
+test("retained rekey state cannot reconstruct an erased directional chain", () => {
+  const root = new Uint8Array(32).fill(17);
+  const context = utf8("conversation:forward-secrecy");
+  const sender = initializeSession(root, context, "initiator");
+  const encrypted = sessionEncrypt(sender, utf8("past"), context);
+  const scoped = frame(utf8("enigm-pq-v2-session"), context, u32(0));
+  const reconstructed = initializeChain(
+    sender.rootKey,
+    frame(scoped, utf8("initiator")),
+  );
+
+  assert.throws(() => ratchetDecrypt(reconstructed, encrypted.message, scoped));
+});
+
+test("initial directional chains remain compatible with the V2 session KDF", () => {
+  const root = new Uint8Array(32).fill(23);
+  const context = utf8("conversation:rolling-upgrade");
+  const session = initializeSession(root, context, "initiator");
+  const legacyMaster = hmac(
+    sha512,
+    root,
+    frame(utf8("enigm-pq-v2-session-root"), context),
+  ).slice(0, 32);
+  const scoped = frame(utf8("enigm-pq-v2-session"), context, u32(0));
+  const legacySend = initializeChain(
+    legacyMaster,
+    frame(scoped, utf8("initiator")),
+  );
+
+  assert.deepEqual(session.send.chainId, legacySend.chainId);
+  assert.deepEqual(session.send.chainKey, legacySend.chainKey);
+  assert.notDeepEqual(session.rootKey, legacyMaster);
+});
+
 test("session rekey changes the epoch and invalidates old ciphertext", () => {
   const root = new Uint8Array(32).fill(5);
   const contribution = new Uint8Array(64).fill(8);
@@ -767,5 +803,18 @@ test("C2SP checkpoints verify log signatures and timestamped witness cosignature
       timestamp,
     ),
     null,
+  );
+
+  assert.equal(
+    verifyC2spLogSignature(`${signed}${"A".repeat(20_000)}`, checkpoint, signer),
+    false,
+  );
+  assert.equal(
+    verifyC2spLogSignature(
+      `${c2spCheckpointText(checkpoint)}\n— ${signer.name} ${"A".repeat(8_000)}\n`,
+      checkpoint,
+      signer,
+    ),
+    false,
   );
 });

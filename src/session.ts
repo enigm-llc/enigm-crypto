@@ -27,6 +27,20 @@ const sessionContext = (context: Uint8Array, epoch: number): Uint8Array =>
 const directionalContext = (context: Uint8Array, direction: 'initiator' | 'responder'): Uint8Array =>
   frame(context, utf8(direction));
 
+const deriveEpochSecrets = (
+  masterSecret: Uint8Array,
+  context: Uint8Array,
+): { chainRoot: Uint8Array; rekeyRoot: Uint8Array } => ({
+  // Preserve the epoch's directional-chain KDF while retaining only a
+  // distinct one-way secret for future rekeys.
+  chainRoot: clone(masterSecret),
+  rekeyRoot: hmac(
+    sha512,
+    masterSecret,
+    frame(utf8('enigm-pq-v2-future-rekey-root'), context),
+  ).slice(0, 32),
+});
+
 export const validateSessionState = (state: SessionState): void => {
   if (
     state.version !== PROTOCOL_VERSION ||
@@ -65,19 +79,25 @@ export const initializeSession = (
   role: SessionRole,
 ): SessionState => {
   assertLength(rootKey, 32, 'Session root key');
-  const root = hmac(sha512, rootKey, frame(utf8('enigm-pq-v2-session-root'), context)).slice(0, 32);
-  const id = sha256(frame(utf8('enigm-pq-v2-session-id'), root, context));
-  const initiator = initializeChain(root, directionalContext(sessionContext(context, 0), 'initiator'));
-  const responder = initializeChain(root, directionalContext(sessionContext(context, 0), 'responder'));
-  return {
-    version: PROTOCOL_VERSION,
-    sessionId: id,
-    epoch: 0,
-    rootKey: root,
-    send: role === 'initiator' ? initiator : responder,
-    receive: role === 'initiator' ? responder : initiator,
-    skipped: [],
-  };
+  const master = hmac(sha512, rootKey, frame(utf8('enigm-pq-v2-session-root'), context)).slice(0, 32);
+  const scoped = sessionContext(context, 0);
+  const { chainRoot, rekeyRoot } = deriveEpochSecrets(master, scoped);
+  try {
+    const id = sha256(frame(utf8('enigm-pq-v2-session-id'), master, context));
+    const initiator = initializeChain(chainRoot, directionalContext(scoped, 'initiator'));
+    const responder = initializeChain(chainRoot, directionalContext(scoped, 'responder'));
+    return {
+      version: PROTOCOL_VERSION,
+      sessionId: id,
+      epoch: 0,
+      rootKey: rekeyRoot,
+      send: role === 'initiator' ? initiator : responder,
+      receive: role === 'initiator' ? responder : initiator,
+      skipped: [],
+    };
+  } finally {
+    wipe(master, chainRoot);
+  }
 };
 
 export const sessionEncrypt = (
@@ -160,25 +180,30 @@ export const rekeySession = (
   validateSessionState(state);
   if (freshHybridSecret.length < 32) throw new Error('A fresh hybrid secret is required for rekeying.');
   const epoch = state.epoch + 1;
-  const rootKey = hmac(
+  const epochMaster = hmac(
     sha512,
     state.rootKey,
     frame(utf8('enigm-pq-v2-session-rekey'), freshHybridSecret, context, u32(epoch)),
   ).slice(0, 32);
   const scoped = sessionContext(context, epoch);
-  const initiator = initializeChain(rootKey, directionalContext(scoped, 'initiator'));
-  const responder = initializeChain(rootKey, directionalContext(scoped, 'responder'));
-  state.skipped.forEach((item) => wipe(item.messageKey));
-  wipe(state.rootKey, state.send.chainKey, state.receive.chainKey);
-  return {
-    version: PROTOCOL_VERSION,
-    sessionId: clone(state.sessionId),
-    epoch,
-    rootKey,
-    send: role === 'initiator' ? initiator : responder,
-    receive: role === 'initiator' ? responder : initiator,
-    skipped: [],
-  };
+  const { chainRoot, rekeyRoot } = deriveEpochSecrets(epochMaster, scoped);
+  try {
+    const initiator = initializeChain(chainRoot, directionalContext(scoped, 'initiator'));
+    const responder = initializeChain(chainRoot, directionalContext(scoped, 'responder'));
+    state.skipped.forEach((item) => wipe(item.messageKey));
+    wipe(state.rootKey, state.send.chainKey, state.receive.chainKey);
+    return {
+      version: PROTOCOL_VERSION,
+      sessionId: clone(state.sessionId),
+      epoch,
+      rootKey: rekeyRoot,
+      send: role === 'initiator' ? initiator : responder,
+      receive: role === 'initiator' ? responder : initiator,
+      skipped: [],
+    };
+  } finally {
+    wipe(epochMaster, chainRoot);
+  }
 };
 
 export const wipeSession = (state: SessionState): void => {

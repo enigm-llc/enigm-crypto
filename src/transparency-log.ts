@@ -8,6 +8,10 @@ const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 const LOG_SIGNATURE_TYPE = 0x01;
 const WITNESS_SIGNATURE_TYPE = 0x04;
 const MAX_SIGNATURE_LINES = 16;
+const MAX_KEY_NAME_BYTES = 128;
+const MAX_SIGNED_NOTE_BYTES = 16 * 1024;
+const LOG_SIGNATURE_BASE64_LENGTH = 92;
+const WITNESS_SIGNATURE_BASE64_LENGTH = 104;
 
 export type C2spLogSigner = {
   name: string;
@@ -53,7 +57,13 @@ const validateTextLine = (value: string, label: string): void => {
 
 const validateKeyName = (value: string): void => {
   validateTextLine(value, 'C2SP key name');
-  if (/\s|\+/u.test(value)) throw new Error('C2SP key name contains a reserved character.');
+  if (
+    value.length > MAX_KEY_NAME_BYTES ||
+    utf8(value).length > MAX_KEY_NAME_BYTES ||
+    /\s|\+/u.test(value)
+  ) {
+    throw new Error('C2SP key name contains a reserved character or is too long.');
+  }
 };
 
 const encodeBase64 = (value: Uint8Array): string => {
@@ -379,6 +389,12 @@ export const signC2spCheckpoint = (
 };
 
 const signatureLines = (signedNote: string, expectedText: string): string[] => {
+  if (
+    signedNote.length > MAX_SIGNED_NOTE_BYTES ||
+    utf8(signedNote).length > MAX_SIGNED_NOTE_BYTES
+  ) {
+    throw new Error('Signed note is too large.');
+  }
   if (!signedNote.startsWith(`${expectedText}\n`)) throw new Error('Signed note body mismatch.');
   const suffix = signedNote.slice(expectedText.length + 1);
   if (!suffix.endsWith('\n')) throw new Error('Signed note is not newline terminated.');
@@ -399,8 +415,12 @@ export const verifyC2spLogSignature = (
     const noteText = c2spCheckpointText(checkpoint);
     const expectedId = keyId(signer.name, LOG_SIGNATURE_TYPE, signer.publicKey);
     for (const line of signatureLines(signedNote, noteText)) {
-      const match = /^\u2014 ([^ ]+) ([A-Za-z0-9+/]+={0,2})$/u.exec(line);
+      const match = new RegExp(
+        `^\\u2014 ([^ ]{1,${MAX_KEY_NAME_BYTES}}) ([A-Za-z0-9+/]{${LOG_SIGNATURE_BASE64_LENGTH - 2},${LOG_SIGNATURE_BASE64_LENGTH}}={0,2})$`,
+        'u',
+      ).exec(line);
       if (!match || match[1] !== signer.name) continue;
+      if ((match[2] ?? '').length !== LOG_SIGNATURE_BASE64_LENGTH) continue;
       const encoded = decodeBase64(match[2] ?? '');
       if (encoded.length !== 68 || !equal(encoded.slice(0, 4), expectedId)) continue;
       return ed25519.verify(encoded.slice(4), utf8(noteText), signer.publicKey, { zip215: false });
@@ -425,8 +445,12 @@ export const verifyC2spWitnessCosignature = (
     const noteText = c2spCheckpointText(checkpoint);
     const expectedId = keyId(witness.name, WITNESS_SIGNATURE_TYPE, witness.publicKey);
     for (const line of signatureLines(signedNote, noteText)) {
-      const match = /^\u2014 ([^ ]+) ([A-Za-z0-9+/]+={0,2})$/u.exec(line);
+      const match = new RegExp(
+        `^\\u2014 ([^ ]{1,${MAX_KEY_NAME_BYTES}}) ([A-Za-z0-9+/]{${WITNESS_SIGNATURE_BASE64_LENGTH - 2},${WITNESS_SIGNATURE_BASE64_LENGTH}}={0,2})$`,
+        'u',
+      ).exec(line);
       if (!match || match[1] !== witness.name) continue;
+      if ((match[2] ?? '').length !== WITNESS_SIGNATURE_BASE64_LENGTH) continue;
       const encoded = decodeBase64(match[2] ?? '');
       if (encoded.length !== 76 || !equal(encoded.slice(0, 4), expectedId)) continue;
       const timestamp = decodeUint64(encoded.slice(4, 12));

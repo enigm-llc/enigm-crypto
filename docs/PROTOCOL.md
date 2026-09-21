@@ -51,10 +51,12 @@ admission, abuse resistance and transport unlinkability before claiming sealed-s
 
 ## Sessions
 
-An envelope normally protects a fresh session root key. Two domain-separated directional chains
-derive unique AES keys and advance after every message. A bounded skipped-key cache permits
-out-of-order delivery while limiting memory use. Explicit rekeying mixes a fresh authenticated
-hybrid secret into the root and erases old chain state.
+An envelope normally protects a fresh session root key. Each epoch derives two independent values:
+an ephemeral seed for the domain-separated directional chains and a one-way future-rekey secret.
+Only the future-rekey secret is retained after chain initialization, so it cannot reconstruct an
+erased directional chain. A bounded skipped-key cache permits out-of-order delivery while limiting
+memory use. Explicit rekeying mixes a fresh authenticated hybrid secret into the retained rekey
+secret, repeats this separation and erases old chain state.
 
 This symmetric construction provides forward secrecy for erased chain keys. A complete messaging
 protocol must define authenticated prekey consumption, durable state transitions, replay handling,
