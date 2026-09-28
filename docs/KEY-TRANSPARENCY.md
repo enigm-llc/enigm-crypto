@@ -60,6 +60,7 @@ Store and serve their timestamped cosignatures with the checkpoint. Clients veri
 
 - the log signature;
 - the configured witness quorum;
+- that every accepted witness cosignature is recent enough for the application's freshness policy;
 - consistency with the last locally accepted checkpoint;
 - inclusion of the identity event they are about to trust;
 - the authenticated current state of that identity.
@@ -75,6 +76,10 @@ Clients should exchange the latest accepted origin, size and root through authen
 encrypted messages. A client rejects a smaller size and reports a different root at the same size.
 When one checkpoint is newer, it requests and verifies an RFC 6962 consistency proof before
 advancing local trust.
+
+`verifyC2spWitnessCosignature` rejects cosignatures older than 24 hours by default. Applications
+may supply a stricter maximum age, but must not disable freshness checks for new or state-reset
+clients.
 
 ## Retention
 

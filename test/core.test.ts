@@ -798,6 +798,18 @@ test("C2SP checkpoints verify log signatures and timestamped witness cosignature
   const signed = signC2spCheckpoint(checkpoint, signer);
 
   assert.equal(verifyC2spLogSignature(signed, checkpoint, signer), true);
+  const logKeyId = sha256(
+    concat(utf8(signer.name), new Uint8Array([0x0a, 0x01]), signer.publicKey),
+  ).slice(0, 4);
+  const forgedLogLine = Buffer.from(concat(logKeyId, new Uint8Array(64))).toString("base64");
+  assert.equal(
+    verifyC2spLogSignature(
+      `${c2spCheckpointText(checkpoint)}\n— ${signer.name} ${forgedLogLine}\n${signed.slice(c2spCheckpointText(checkpoint).length + 1)}`,
+      checkpoint,
+      signer,
+    ),
+    true,
+  );
   assert.match(
     c2spVerifierKey(signer.name, signer.publicKey),
     /^keys\.example\.test\/v1\+[0-9a-f]{8}\+/u,
@@ -845,12 +857,33 @@ test("C2SP checkpoints verify log signatures and timestamped witness cosignature
     ),
     timestamp,
   );
+  const forgedWitnessLine = Buffer.from(
+    concat(witnessKeyId, encodeC2spWitnessTimestamp(timestamp), new Uint8Array(64)),
+  ).toString("base64");
+  assert.equal(
+    verifyC2spWitnessCosignature(
+      `${signed}— ${witnessName} ${forgedWitnessLine}\n— ${witnessName} ${signatureLine}\n`,
+      checkpoint,
+      { name: witnessName, publicKey: witnessIdentity.ed25519PublicKey },
+      timestamp,
+    ),
+    timestamp,
+  );
   assert.equal(
     verifyC2spWitnessCosignature(
       cosigned,
       checkpoint,
       { name: witnessName, publicKey: witnessIdentity.ed25519PublicKey },
       timestamp - 301,
+    ),
+    null,
+  );
+  assert.equal(
+    verifyC2spWitnessCosignature(
+      cosigned,
+      checkpoint,
+      { name: witnessName, publicKey: witnessIdentity.ed25519PublicKey },
+      timestamp + 86_401,
     ),
     null,
   );
