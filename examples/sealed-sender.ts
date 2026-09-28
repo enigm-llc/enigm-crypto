@@ -1,4 +1,5 @@
 import {
+  equal,
   generateIdentity,
   generateKemBundle,
   openSealedSender,
@@ -12,12 +13,13 @@ const sender = generateIdentity();
 const recipient = generateIdentity();
 const recipientBundle = generateKemBundle(recipient, Date.now() + 60_000);
 const context = utf8('example:sealed-sender:message:1');
+const expectedPlaintext = utf8('authenticated without exposing the sender to the relay');
 
 const envelope = sealSender({
   sender,
   recipientIdentity: publicIdentity(recipient),
   recipient: publicKemBundle(recipientBundle),
-  plaintext: utf8('authenticated without exposing the sender to the relay'),
+  plaintext: expectedPlaintext,
   context,
 });
 
@@ -29,4 +31,7 @@ const opened = openSealedSender({
   expectedSenderIdentity: publicIdentity(sender),
 });
 
-console.log(new TextDecoder().decode(opened.plaintext));
+if (!equal(opened.plaintext, expectedPlaintext)) {
+  throw new Error('Sealed sender round-trip failed.');
+}
+process.stdout.write('sealed sender round-trip verified\n');

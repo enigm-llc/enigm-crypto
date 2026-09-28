@@ -2,6 +2,7 @@ import {
   createGroupEpoch,
   decryptContent,
   decryptGroupEpoch,
+  equal,
   encryptContent,
   encryptGroupEpoch,
   generateContentKey,
@@ -10,14 +11,24 @@ import {
 } from '../src/index.js';
 
 let epoch = createGroupEpoch(utf8('example-group-id'), ['device-a', 'device-b']);
-const metadata = encryptGroupEpoch(epoch, 'metadata', utf8('{"name":"Example"}'));
-console.log(new TextDecoder().decode(decryptGroupEpoch(epoch, metadata)));
+const expectedMetadata = utf8('{"name":"Example"}');
+const metadata = encryptGroupEpoch(epoch, 'metadata', expectedMetadata);
+if (!equal(decryptGroupEpoch(epoch, metadata), expectedMetadata)) {
+  throw new Error('Group metadata round-trip failed.');
+}
 
 epoch = rotateGroupEpoch(epoch, ['device-a', 'device-b', 'device-c']);
-const message = encryptGroupEpoch(epoch, 'message', utf8('new epoch message'));
-console.log(new TextDecoder().decode(decryptGroupEpoch(epoch, message)));
+const expectedMessage = utf8('new epoch message');
+const message = encryptGroupEpoch(epoch, 'message', expectedMessage);
+if (!equal(decryptGroupEpoch(epoch, message), expectedMessage)) {
+  throw new Error('Group message round-trip failed.');
+}
 
 const fileKey = generateContentKey();
 const fileContext = utf8('example|conversation:42|file:asset-1');
-const file = encryptContent(fileKey, utf8('binary payload'), fileContext);
-console.log(new TextDecoder().decode(decryptContent(fileKey, file, fileContext)));
+const expectedFile = utf8('binary payload');
+const file = encryptContent(fileKey, expectedFile, fileContext);
+if (!equal(decryptContent(fileKey, file, fileContext), expectedFile)) {
+  throw new Error('Content round-trip failed.');
+}
+process.stdout.write('group and content round-trips verified\n');
