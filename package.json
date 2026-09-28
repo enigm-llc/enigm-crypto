@@ -32,6 +32,7 @@
     "README.md",
     "SECURITY.md",
     "CONTRIBUTING.md",
+    "NOTICE",
     "LICENSE"
   ],
   "scripts": {

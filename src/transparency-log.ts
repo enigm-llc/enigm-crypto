@@ -248,10 +248,12 @@ export const verifyRfc6962Inclusion = (
     validateSafeSize(treeSize, 'Merkle tree size');
     assertLength(rootHash, 32, 'Merkle root hash');
     if (!Number.isSafeInteger(leafIndex) || leafIndex < 0 || leafIndex >= treeSize) return false;
+    if (proof.length > Math.ceil(Math.log2(treeSize))) return false;
     let node = rfc6962LeafHash(entry);
     let leaf = leafIndex;
     let last = treeSize - 1;
     for (const sibling of proof) {
+      if (leaf === 0 && last === 0) return false;
       assertLength(sibling, 32, 'Merkle proof hash');
       if ((leaf & 1) === 1 || leaf === last) {
         node = rfc6962NodeHash(sibling, node);
@@ -265,7 +267,7 @@ export const verifyRfc6962Inclusion = (
       leaf = Math.floor(leaf / 2);
       last = Math.floor(last / 2);
     }
-    return last === 0 && equal(node, rootHash);
+    return leaf === 0 && last === 0 && equal(node, rootHash);
   } catch {
     return false;
   }

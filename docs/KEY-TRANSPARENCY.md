@@ -40,7 +40,9 @@ For an identity lookup, verify:
 - one common signed checkpoint and witness policy for both inclusion proofs.
 
 `verifyKeyTransparencyStateMembership` verifies the portable proof. Tree balancing, transactional
-storage and authorization of private lookup material remain application responsibilities.
+storage and authorization of private lookup material remain application responsibilities. Proofs
+must follow strict lexicographic key ordering and are limited to 256 parent steps, so one signed
+root cannot authenticate conflicting states for the same identity key.
 
 ## Checkpoint
 
