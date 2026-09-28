@@ -44,6 +44,7 @@ import {
   ratchetEncrypt,
   rfc6962ConsistencyProof,
   rfc6962InclusionProof,
+  rfc6962NodeHash,
   rfc6962Root,
   rfc6962RootFromFrontier,
   rekeySession,
@@ -196,6 +197,63 @@ test("key transparency state proofs bind current activation state to a log entry
   assert.equal(
     Buffer.from(vectorRoot).toString("base64"),
     "k9FSqu6D06PTXvaNS1N8I8oY4s6wWaSHWivkXgfq73I=",
+  );
+
+  const conflictingActive = keyTransparencyStateNodeHash(
+    secondKey,
+    "ACTIVATE",
+    empty,
+    empty,
+  );
+  const conflictingRoot = keyTransparencyStateNodeHash(
+    secondKey,
+    "REVOKE",
+    conflictingActive,
+    empty,
+  );
+  assert.equal(
+    verifyKeyTransparencyStateMembership(conflictingRoot, {
+      identityKeyId: secondKey,
+      action: "REVOKE",
+      leftHash: conflictingActive,
+      rightHash: empty,
+      path: [],
+    }),
+    true,
+  );
+  assert.equal(
+    verifyKeyTransparencyStateMembership(conflictingRoot, {
+      identityKeyId: secondKey,
+      action: "ACTIVATE",
+      leftHash: empty,
+      rightHash: empty,
+      path: [
+        {
+          side: "LEFT",
+          parentIdentityKeyId: secondKey,
+          parentAction: "REVOKE",
+          siblingHash: empty,
+        },
+      ],
+    }),
+    false,
+  );
+
+  const oversizedPath = Array.from({ length: 257 }, () => ({
+    side: "LEFT" as const,
+    parentIdentityKeyId: new Uint8Array(32).fill(3),
+    parentAction: "ACTIVATE" as const,
+    siblingHash: empty,
+  }));
+  assert.equal(
+    verifyKeyTransparencyStateMembership(vectorRoot, {
+      identityKeyId: vectorKey,
+      action: "ACTIVATE",
+      leftHash: empty,
+      rightHash: empty,
+      path: oversizedPath,
+    }),
+    false,
   );
 });
 
@@ -678,6 +736,19 @@ test("RFC 6962 inclusion and consistency proofs cover uneven tree sizes", () => 
   modified[0]![0] ^= 0xff;
   assert.equal(
     verifyRfc6962Inclusion(entries[17]!, 17, entries.length, root, modified),
+    false,
+  );
+
+  const singleEntry = utf8("single");
+  const surplusSibling = sha256(utf8("surplus"));
+  assert.equal(
+    verifyRfc6962Inclusion(
+      singleEntry,
+      0,
+      1,
+      rfc6962NodeHash(surplusSibling, rfc6962Root([singleEntry])),
+      [surplusSibling],
+    ),
     false,
   );
 });

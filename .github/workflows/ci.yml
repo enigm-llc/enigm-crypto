@@ -6,23 +6,27 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: read
-
 jobs:
   verify:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 20.19.0
           cache: npm
-      - run: npm ci
-      - run: npm audit --omit=dev --audit-level=high
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: npm audit signatures
       - run: npm run check
       - run: npm test
+      - run: npm run examples
+      - run: npm run benchmark
       - run: npm run build
       - run: npm run pack:verify
       - run: npm run --silent sbom > enigm-crypto.cdx.json

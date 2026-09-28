@@ -11,6 +11,7 @@ const ENTRY_DOMAIN = utf8("enigm-key-transparency-entry-v2");
 const STATE_EMPTY_DOMAIN = utf8("enigm-key-transparency-state-empty-v2");
 const STATE_NODE_DOMAIN = utf8("enigm-key-transparency-state-node-v2");
 const EMPTY_STATE_HASH = sha256(STATE_EMPTY_DOMAIN);
+const MAX_STATE_PROOF_STEPS = 256;
 
 export type KeyTransparencyStateProofStep = {
   side: "LEFT" | "RIGHT";
@@ -31,6 +32,13 @@ const actionByte = (action: KeyTransparencyAction): Uint8Array => {
   if (action === "ACTIVATE") return new Uint8Array([1]);
   if (action === "REVOKE") return new Uint8Array([2]);
   throw new Error("Unsupported key transparency action.");
+};
+
+const compareIdentityKeyIds = (left: Uint8Array, right: Uint8Array): number => {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index]! < right[index]! ? -1 : 1;
+  }
+  return 0;
 };
 
 export const emptyKeyTransparencyStateHash = (): Uint8Array =>
@@ -80,6 +88,8 @@ export const verifyKeyTransparencyStateMembership = (
 ): boolean => {
   try {
     assertLength(rootHash, 32, "Key transparency state root");
+    assertLength(proof.identityKeyId, 32, "Identity key identifier");
+    if (proof.path.length > MAX_STATE_PROOF_STEPS) return false;
     let current = keyTransparencyStateNodeHash(
       proof.identityKeyId,
       proof.action,
@@ -93,22 +103,29 @@ export const verifyKeyTransparencyStateMembership = (
         "Parent identity key identifier",
       );
       assertLength(step.siblingHash, 32, "State proof sibling hash");
-      current =
-        step.side === "LEFT"
-          ? keyTransparencyStateNodeHash(
-              step.parentIdentityKeyId,
-              step.parentAction,
-              current,
-              step.siblingHash,
-            )
-          : step.side === "RIGHT"
-            ? keyTransparencyStateNodeHash(
-                step.parentIdentityKeyId,
-                step.parentAction,
-                step.siblingHash,
-                current,
-              )
-            : new Uint8Array();
+      const order = compareIdentityKeyIds(
+        proof.identityKeyId,
+        step.parentIdentityKeyId,
+      );
+      if (step.side === "LEFT") {
+        if (order >= 0) return false;
+        current = keyTransparencyStateNodeHash(
+          step.parentIdentityKeyId,
+          step.parentAction,
+          current,
+          step.siblingHash,
+        );
+      } else if (step.side === "RIGHT") {
+        if (order <= 0) return false;
+        current = keyTransparencyStateNodeHash(
+          step.parentIdentityKeyId,
+          step.parentAction,
+          step.siblingHash,
+          current,
+        );
+      } else {
+        return false;
+      }
     }
     return equal(current, rootHash);
   } catch {

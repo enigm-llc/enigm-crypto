@@ -11,11 +11,11 @@ This package is pre-release security software. It has not completed an independe
 audit and is not a FIPS 140-3 validated module. Review [SECURITY.md](SECURITY.md) and the
 [threat model](docs/THREAT-MODEL.md) before using it with sensitive data.
 
-## Install
+## Package status
 
-```sh
-npm install @enigm/crypto
-```
+`@enigm/crypto` is not published to the npm registry yet. Until trusted publishing is configured,
+consume reviewed source commits or the checksum- and provenance-backed tarballs attached to GitHub
+pre-releases. Do not publish a locally rebuilt tarball under this package name.
 
 The package publishes ESM, CommonJS and React Native entry points from one TypeScript source.
 Node.js uses the runtime CSPRNG. Other runtimes must provide a cryptographically secure random
