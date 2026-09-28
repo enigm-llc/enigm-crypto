@@ -1,4 +1,5 @@
 import {
+  equal,
   generateIdentity,
   generateKemBundle,
   open,
@@ -12,12 +13,13 @@ const sender = generateIdentity();
 const recipient = generateIdentity();
 const recipientBundle = generateKemBundle(recipient, Date.now() + 60_000);
 const context = utf8('example|conversation:42|sender:device-a|recipient:device-b|message:1');
+const expectedPlaintext = utf8('authenticated hybrid envelope');
 
 const envelope = seal({
   sender,
   recipientIdentity: publicIdentity(recipient),
   recipient: publicKemBundle(recipientBundle),
-  plaintext: utf8('authenticated hybrid envelope'),
+  plaintext: expectedPlaintext,
   context,
 });
 
@@ -29,4 +31,5 @@ const plaintext = open({
   context,
 });
 
-console.log(new TextDecoder().decode(plaintext));
+if (!equal(plaintext, expectedPlaintext)) throw new Error('Envelope round-trip failed.');
+process.stdout.write('authenticated hybrid envelope round-trip verified\n');
