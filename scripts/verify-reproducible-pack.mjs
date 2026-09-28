@@ -1,16 +1,24 @@
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = new URL('..', import.meta.url).pathname;
+const npmCli = process.env.npm_execpath;
+if (!npmCli || !isAbsolute(npmCli)) {
+  throw new Error('Run reproducible package verification through npm.');
+}
 const temporary = await mkdtemp(join(tmpdir(), 'enigm-crypto-pack-'));
 const pack = (directory) => {
-  const result = spawnSync('npm', ['pack', '--ignore-scripts', '--pack-destination', directory], {
-    cwd: root,
-    encoding: 'utf8',
-  });
+  const result = spawnSync(
+    process.execPath,
+    [npmCli, 'pack', '--ignore-scripts', '--pack-destination', directory],
+    {
+      cwd: root,
+      encoding: 'utf8',
+    },
+  );
   if (result.status !== 0) throw new Error(result.stderr || 'npm pack failed.');
 };
 const digest = async (path) =>
@@ -38,4 +46,3 @@ try {
 } finally {
   await rm(temporary, { recursive: true, force: true });
 }
-
