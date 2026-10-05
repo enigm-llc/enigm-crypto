@@ -1,3 +1,4 @@
+import { decodeUtf8 } from './utf8.js';
 import {
   CIPHER_SUITE,
   PROTOCOL_VERSION,
@@ -45,7 +46,7 @@ class FrameReader {
   }
 }
 
-const decodeText = (value: Uint8Array): string => new TextDecoder('utf-8', { fatal: true }).decode(value);
+const decodeText = decodeUtf8;
 
 const decodeVersionAndSuite = (reader: FrameReader): void => {
   if (!equal(reader.readExact(MAGIC.length, 'Object magic'), MAGIC)) {

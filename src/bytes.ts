@@ -1,6 +1,6 @@
-const textEncoder = new TextEncoder();
+import { encodeUtf8 } from './utf8.js';
 
-export const utf8 = (value: string): Uint8Array => textEncoder.encode(value);
+export const utf8 = (value: string): Uint8Array => encodeUtf8(value);
 
 export const concat = (...values: readonly Uint8Array[]): Uint8Array => {
   const length = values.reduce((total, value) => total + value.length, 0);

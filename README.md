@@ -21,6 +21,14 @@ The package publishes ESM, CommonJS and React Native entry points from one TypeS
 Node.js uses the runtime CSPRNG. Other runtimes must provide a cryptographically secure random
 source backed by the operating system.
 
+UTF-8 encoding and strict decoding do not require `TextEncoder`, `TextDecoder` or `Buffer`.
+When `TextEncoder` is absent, the package installs a UTF-8 encoder before loading Noble:
+`@noble/curves` 2.3.0 eagerly encodes FROST domains during its Ed25519 module initialization.
+An existing encoder is preserved; no global decoder is installed. The fallback supports
+`encode` and `encodeInto` (including whole-sequence writes and UTF-16 read counts).
+The initialization module is marked as a package side effect so bundlers retain it.
+See [React Native runtime validation](docs/REACT-NATIVE.md) for checks and integration guidance.
+
 ## Cipher suite
 
 `ENIGM-PQ-V2-MLKEM768-X25519-MLDSA65-ED25519-AES256GCM-HKDFSHA512`

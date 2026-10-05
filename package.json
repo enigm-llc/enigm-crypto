@@ -2,7 +2,7 @@
   "name": "@enigm/crypto",
   "version": "0.1.0",
   "description": "Portable hybrid post-quantum cryptographic primitives and protocol building blocks",
-  "sideEffects": false,
+  "sideEffects": ["./dist/text-encoder-runtime.js", "./dist-cjs/text-encoder-runtime.js", "./src/text-encoder-runtime.ts"],
   "keywords": [
     "enigm",
     "cryptography",
@@ -39,6 +39,7 @@
     "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
+    "test:runtime": "npm run build && node scripts/verify-text-runtime.mjs",
     "benchmark": "tsx test/benchmark.ts",
     "examples": "tsx examples/envelope.ts && tsx examples/session.ts && tsx examples/group-and-content.ts && tsx examples/key-transparency.ts && tsx examples/sealed-sender.ts",
     "pack:verify": "npm run build && node scripts/verify-reproducible-pack.mjs",
