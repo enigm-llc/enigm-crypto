@@ -1,0 +1,9 @@
+{
+  "logPublicKey": "Zr5+Myx6RTMyvZ0Kf32wVfXF7xoGraZtmLOftoEMRzo=",
+  "senderBinding": {
+    "identityKeyId": "nvWt9BG09dOxrVZmIInm4P1TL9EYEXIUZ6hIhcKDm0A=",
+    "accountCommitment": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM=",
+    "deviceCommitment": "BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ=",
+    "bindingSignature": "7qNUyzGW6LsSvIx0rOQONg5IFUBUBgybohxDfKfoBHtwjFWeCDpqr79qAnqF7Nm02Ib9Abj2pegwgNZtrVfPDA=="
+  }
+}

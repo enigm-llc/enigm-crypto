@@ -1,8 +1,8 @@
 {
   "name": "@enigm/crypto",
-  "version": "0.1.0",
-  "description": "Portable hybrid post-quantum cryptographic primitives and protocol building blocks",
-  "sideEffects": ["./dist/text-encoder-runtime.js", "./dist-cjs/text-encoder-runtime.js", "./src/text-encoder-runtime.ts"],
+  "version": "0.2.0-alpha.0",
+  "description": "Modular TypeScript hybrid cryptography SDK with portable Enigm messaging and key transparency",
+  "sideEffects": false,
   "keywords": [
     "enigm",
     "cryptography",
@@ -21,30 +21,73 @@
       "import": "./dist/index.js",
       "require": "./dist-cjs/index.js",
       "default": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "react-native": "./dist-cjs/core/index.js",
+      "import": "./dist/core/index.js",
+      "require": "./dist-cjs/core/index.js",
+      "default": "./dist/core/index.js"
+    },
+    "./primitives": {
+      "types": "./dist/primitives/index.d.ts",
+      "react-native": "./dist-cjs/primitives/index.js",
+      "import": "./dist/primitives/index.js",
+      "require": "./dist-cjs/primitives/index.js",
+      "default": "./dist/primitives/index.js"
+    },
+    "./protocols": {
+      "types": "./dist/protocols/index.d.ts",
+      "react-native": "./dist-cjs/protocols/index.js",
+      "import": "./dist/protocols/index.js",
+      "require": "./dist-cjs/protocols/index.js",
+      "default": "./dist/protocols/index.js"
+    },
+    "./codecs": {
+      "types": "./dist/codecs/index.d.ts",
+      "react-native": "./dist-cjs/codecs/index.js",
+      "import": "./dist/codecs/index.js",
+      "require": "./dist-cjs/codecs/index.js",
+      "default": "./dist/codecs/index.js"
+    },
+    "./sdk": {
+      "types": "./dist/sdk/index.d.ts",
+      "react-native": "./dist-cjs/sdk/index.js",
+      "import": "./dist/sdk/index.js",
+      "require": "./dist-cjs/sdk/index.js",
+      "default": "./dist/sdk/index.js"
     }
   },
   "files": [
     "dist",
     "dist-cjs",
     "src",
-    "docs",
     "examples",
     "README.md",
     "SECURITY.md",
     "CONTRIBUTING.md",
     "NOTICE",
-    "LICENSE"
+    "LICENSE",
+    "docs/PROTOCOL.md",
+    "docs/THREAT-MODEL.md",
+    "docs/KEY-TRANSPARENCY.md",
+    "docs/REACT-NATIVE.md",
+    "docs/SDK.md",
+    "docs/ADAPTERS.md",
+    "docs/RELEASE.md",
+    "THIRD-PARTY-LICENSES.txt"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && tsc -p tsconfig.cjs.json && node scripts/write-cjs-package.mjs",
+    "build": "node scripts/build.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "tsx --test test/*.test.ts",
     "test:runtime": "npm run build && node scripts/verify-text-runtime.mjs",
     "benchmark": "tsx test/benchmark.ts",
-    "examples": "tsx examples/envelope.ts && tsx examples/session.ts && tsx examples/group-and-content.ts && tsx examples/key-transparency.ts && tsx examples/sealed-sender.ts",
+    "examples": "tsx examples/envelope.ts && tsx examples/session.ts && tsx examples/group-and-content.ts && tsx examples/key-transparency.ts && tsx examples/sealed-sender.ts && tsx examples/sdk.ts",
     "pack:verify": "npm run build && node scripts/verify-reproducible-pack.mjs",
     "sbom": "npm sbom --package-lock-only --sbom-format cyclonedx --sbom-type library",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test:package": "npm run build && node scripts/verify-package-consumers.mjs"
   },
   "engines": {
     "node": ">=20.19.0"
@@ -57,8 +100,21 @@
   },
   "devDependencies": {
     "@types/node": "22.19.11",
+    "esbuild": "0.25.12",
     "tsx": "4.20.6",
     "typescript": "5.9.3"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public",
+    "tag": "next"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/enigm-llc/enigm-crypto.git"
+  },
+  "homepage": "https://github.com/enigm-llc/enigm-crypto#readme",
+  "bugs": {
+    "url": "https://github.com/enigm-llc/enigm-crypto/issues"
+  }
 }

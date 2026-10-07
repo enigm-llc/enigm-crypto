@@ -22,11 +22,10 @@ Node.js uses the runtime CSPRNG. Other runtimes must provide a cryptographically
 source backed by the operating system.
 
 UTF-8 encoding and strict decoding do not require `TextEncoder`, `TextDecoder` or `Buffer`.
-When `TextEncoder` is absent, the package installs a UTF-8 encoder before loading Noble:
-`@noble/curves` 2.3.0 eagerly encodes FROST domains during its Ed25519 module initialization.
-An existing encoder is preserved; no global decoder is installed. The fallback supports
-`encode` and `encodeInto` (including whole-sequence writes and UTF-16 read counts).
-The initialization module is marked as a package side effect so bundlers retain it.
+The compiled public entry points bundle their dependencies and remove unused eager initialization.
+They do not install global text polyfills. Curve scalar blinding still requires a secure
+`crypto.getRandomValues` implementation, including when a `RandomSource` is supplied.
+Use an OS-backed provider in React Native; never replace it with `Math.random`.
 See [React Native runtime validation](docs/REACT-NATIVE.md) for checks and integration guidance.
 
 ## Cipher suite
@@ -85,6 +84,22 @@ rotation, large-content encryption, sealed senders and signed key-transparency c
 The public-log integration contract is documented in
 [Key transparency](docs/KEY-TRANSPARENCY.md).
 
+## Modular SDK
+
+The existing root API remains available. Additive npm subpaths expose:
+
+| Import | Responsibility |
+| --- | --- |
+| `@enigm/crypto/core` | Bytes, strict UTF-8, base64 and shared types |
+| `@enigm/crypto/primitives` | Hybrid identities and KEM bundles |
+| `@enigm/crypto/protocols` | Envelopes, sessions, groups, payloads and transparency |
+| `@enigm/crypto/codecs` | Canonical wire codecs |
+| `@enigm/crypto/sdk` | Enigm message, device, session, attachment and transparency clients |
+
+The SDK owns cryptographic policy. The host supplies secure storage, OS entropy, transport and
+configuration through explicit adapters. See [SDK usage](docs/SDK.md) and
+[adapter contracts](docs/ADAPTERS.md). Mobile integration is a separate follow-up.
+
 ## API map
 
 | Module | Responsibility |
@@ -127,6 +142,8 @@ npm test
 npm run examples
 npm run benchmark
 npm run build
+npm run test:runtime
+npm run test:package
 npm run pack:verify
 npm run --silent sbom > enigm-crypto.cdx.json
 npm pack --dry-run

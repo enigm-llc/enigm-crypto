@@ -1,0 +1,280 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { ed25519 } from "@noble/curves/ed25519.js";
+import {
+  generateIdentity,
+  generateKemBundle,
+  publicIdentity,
+  encodePublicIdentity,
+  encodePublicKemBundle,
+  publicKemBundle,
+  utf8,
+} from "../src/index.ts";
+import { encodeBase64 } from "../src/core/base64.ts";
+import {
+  createEnigmSessionClient,
+  createEnigmDeviceClient,
+  createEnigmMessageClient,
+} from "../src/sdk/index.ts";
+const random = (length: number) => new Uint8Array(length).fill(7);
+const memory = () => {
+  const rows = new Map<string, string>();
+  const queues = new Map<string, Promise<unknown>>();
+  return {
+    rows,
+    read: async (id: string) => rows.get(id) ?? null,
+    write: async (id: string, value: string) => {
+      rows.set(id, value);
+    },
+    delete: async (id: string) => {
+      rows.delete(id);
+    },
+    exclusive: <T>(id: string, action: () => Promise<T>): Promise<T> => {
+      const operation = (queues.get(id) ?? Promise.resolve())
+        .catch(() => {})
+        .then(action);
+      queues.set(id, operation);
+      return operation;
+    },
+  };
+};
+const setup = () => {
+  const alice = generateIdentity((length) => new Uint8Array(length).fill(1));
+  const bob = generateIdentity((length) => new Uint8Array(length).fill(2));
+  const expiry = Date.now() + 600000;
+  const material = {
+    alice: {
+      identity: alice,
+      bundles: [
+        { bundle: generateKemBundle(alice, expiry, random), lastResort: true },
+      ],
+    },
+    bob: {
+      identity: bob,
+      bundles: [
+        { bundle: generateKemBundle(bob, expiry, random), lastResort: false },
+      ],
+    },
+  };
+  const consumed: string[] = [];
+  const device = createEnigmDeviceClient({
+    randomSource: random,
+    store: {
+      load: async (id) => structuredClone(material[id as "alice" | "bob"]),
+      consume: async (_account, id) => {
+        consumed.push(id);
+      },
+    },
+  });
+  const store = memory();
+  const sessions = createEnigmSessionClient({ store, randomSource: random });
+  const logSecret = new Uint8Array(32).fill(11);
+  const logPublicKey = encodeBase64(ed25519.getPublicKey(logSecret));
+  const client = createEnigmMessageClient({
+    device,
+    sessions,
+    randomSource: random,
+    logPublicKey,
+  });
+  const senderBinding = {
+    identityKeyId: encodeBase64(alice.keyId),
+    accountCommitment: encodeBase64(new Uint8Array(32).fill(3)),
+    deviceCommitment: encodeBase64(new Uint8Array(32).fill(4)),
+    bindingSignature: "",
+  };
+  senderBinding.bindingSignature = encodeBase64(
+    ed25519.sign(
+      utf8(
+        JSON.stringify([
+          "enigm-key-transparency-binding-v2",
+          "alice",
+          "alice-device",
+          senderBinding.identityKeyId,
+          senderBinding.accountCommitment,
+          senderBinding.deviceCommitment,
+        ])
+      ),
+      logSecret
+    )
+  );
+  return {
+    client,
+    device,
+    sessions,
+    store,
+    consumed,
+    senderBinding,
+    bob,
+    alice,
+    bobBundle: encodeBase64(
+      encodePublicKemBundle(publicKemBundle(material.bob.bundles[0]!.bundle))
+    ),
+  };
+};
+test("message SDK round-trips sender-local, bootstrap and established-session packets", async () => {
+  const f = setup();
+  const targets = [
+    { userId: "alice", deviceId: "alice-device" },
+    {
+      userId: "bob",
+      deviceId: "bob-device",
+      encodedIdentity: await f.device.publicIdentityEncoded("bob"),
+      encodedBundle: f.bobBundle,
+      identityKeyId: encodeBase64(f.bob.keyId),
+    },
+  ];
+  for (const messageId of ["one", "two"]) {
+    const encrypted = await f.client.encryptMessage({
+      accountId: "alice",
+      conversationId: "c",
+      messageId,
+      senderDeviceId: "alice-device",
+      senderBinding: f.senderBinding,
+      plaintext: utf8("hola 😀 " + messageId),
+      targets,
+    });
+    for (const [accountId, currentDeviceId] of [
+      ["alice", "alice-device"],
+      ["bob", "bob-device"],
+    ]) {
+      const opened = await f.client.decryptMessage({
+        accountId,
+        conversationId: "c",
+        messageId,
+        currentDeviceId,
+        expectedSenderUserId: "alice",
+        encrypted,
+      });
+      assert.deepEqual(opened, utf8("hola 😀 " + messageId));
+    }
+  }
+  assert.equal(f.consumed.length, 1);
+});
+test("tampered bootstrap cannot commit state or consume its one-time key", async () => {
+  const f = setup();
+  const encrypted = await f.client.encryptMessage({
+    accountId: "alice",
+    conversationId: "c",
+    messageId: "m",
+    senderDeviceId: "alice-device",
+    senderBinding: f.senderBinding,
+    plaintext: utf8("secret"),
+    targets: [
+      {
+        userId: "bob",
+        deviceId: "bob-device",
+        encodedIdentity: encodeBase64(
+          encodePublicIdentity(publicIdentity(f.bob))
+        ),
+        encodedBundle: f.bobBundle,
+        identityKeyId: encodeBase64(f.bob.keyId),
+      },
+    ],
+  });
+  encrypted.ciphertext = "AAAA";
+  await assert.rejects(
+    f.client.decryptMessage({
+      accountId: "bob",
+      conversationId: "c",
+      messageId: "m",
+      currentDeviceId: "bob-device",
+      expectedSenderUserId: "alice",
+      encrypted,
+    })
+  );
+  assert.equal(f.store.rows.has("bob"), false);
+  assert.equal(f.consumed.length, 0);
+});
+
+test("message SDK rejects altered sender attribution and duplicate targets", async () => {
+  const f = setup();
+  const input = {
+    accountId: "alice",
+    conversationId: "c",
+    messageId: "m",
+    senderDeviceId: "alice-device",
+    senderBinding: f.senderBinding,
+    plaintext: utf8("message"),
+    targets: [{ userId: "alice", deviceId: "alice-device" }],
+  };
+  await assert.rejects(
+    f.client.encryptMessage({
+      ...input,
+      targets: [...input.targets, ...input.targets],
+    }),
+    /Duplicate/
+  );
+  const encrypted = await f.client.encryptMessage(input);
+  await assert.rejects(
+    f.client.decryptMessage({
+      accountId: "alice",
+      conversationId: "c",
+      messageId: "m",
+      currentDeviceId: "alice-device",
+      expectedSenderUserId: "mallory",
+      encrypted,
+    }),
+    /attribution/
+  );
+  const modified = structuredClone(encrypted);
+  modified.keyPackets[0]!.senderIdentityBindingSignature = encodeBase64(
+    new Uint8Array(64)
+  );
+  await assert.rejects(
+    f.client.decryptMessage({
+      accountId: "alice",
+      conversationId: "c",
+      messageId: "m",
+      currentDeviceId: "alice-device",
+      expectedSenderUserId: "alice",
+      encrypted: modified,
+    }),
+    /IDENTITY_BINDING_MISMATCH/
+  );
+});
+test('established sessions reject substituted sender accounts before advancement', async () => {
+ const f=setup();
+ const base={accountId:'alice',conversationId:'c',senderDeviceId:'alice-device',senderBinding:f.senderBinding,plaintext:utf8('authenticated'),targets:[{userId:'bob',deviceId:'bob-device',encodedIdentity:await f.device.publicIdentityEncoded('bob'),encodedBundle:f.bobBundle,identityKeyId:encodeBase64(f.bob.keyId)}]};
+ const receive={accountId:'bob',conversationId:'c',currentDeviceId:'bob-device',expectedSenderUserId:'alice'};
+ const first=await f.client.encryptMessage({...base,messageId:'one'});
+ await f.client.decryptMessage({...receive,messageId:'one',encrypted:first});
+ const second=await f.client.encryptMessage({...base,messageId:'two'});
+ const before=f.store.rows.get('bob');
+ const forged=structuredClone(second);forged.keyPackets[0]!.senderUserId='mallory';
+ await assert.rejects(f.client.decryptMessage({...receive,expectedSenderUserId:'mallory',messageId:'two',encrypted:forged}),/attribution/);
+ assert.equal(f.store.rows.get('bob'),before);
+ assert.deepEqual(await f.client.decryptMessage({...receive,messageId:'two',encrypted:second}),base.plaintext);
+});
+test('legacy stored sessions gain attribution only from an authenticated matching bootstrap', async () => {
+ const f=setup();
+ const base={accountId:'alice',conversationId:'c',senderDeviceId:'alice-device',senderBinding:f.senderBinding,plaintext:utf8('legacy'),targets:[{userId:'bob',deviceId:'bob-device',encodedIdentity:await f.device.publicIdentityEncoded('bob'),encodedBundle:f.bobBundle,identityKeyId:encodeBase64(f.bob.keyId)}]};
+ const receive={accountId:'bob',conversationId:'c',currentDeviceId:'bob-device',expectedSenderUserId:'alice'};
+ const first=await f.client.encryptMessage({...base,messageId:'one'});
+ await f.client.decryptMessage({...receive,messageId:'one',encrypted:first});
+ const legacy=JSON.parse(f.store.rows.get('bob')!);delete legacy.sessionSenders;f.store.rows.set('bob',JSON.stringify(legacy));
+ const second=await f.client.encryptMessage({...base,messageId:'two'});
+ const before=f.store.rows.get('bob');
+ await assert.rejects(f.client.decryptMessage({...receive,messageId:'two',encrypted:second}),/attribution/);
+ assert.equal(f.store.rows.get('bob'),before);
+ const forged=structuredClone(first);forged.keyPackets[0]!.senderUserId='mallory';
+ await assert.rejects(f.client.decryptMessage({...receive,expectedSenderUserId:'mallory',messageId:'one',encrypted:forged}));
+ assert.equal(f.store.rows.get('bob'),before);
+ assert.deepEqual(await f.client.decryptMessage({...receive,messageId:'one',encrypted:first}),base.plaintext);
+ assert.deepEqual(await f.client.decryptMessage({...receive,messageId:'two',encrypted:second}),base.plaintext);
+ assert.equal(f.consumed.length,1);
+});
+test('receive transaction rechecks attribution after concurrent state replacement', async () => {
+ const f=setup();
+ const base={accountId:'alice',conversationId:'c',senderDeviceId:'alice-device',senderBinding:f.senderBinding,plaintext:utf8('race'),targets:[{userId:'bob',deviceId:'bob-device',encodedIdentity:await f.device.publicIdentityEncoded('bob'),encodedBundle:f.bobBundle,identityKeyId:encodeBase64(f.bob.keyId)}]};
+ const receive={accountId:'bob',conversationId:'c',currentDeviceId:'bob-device',expectedSenderUserId:'alice'};
+ await f.client.decryptMessage({...receive,messageId:'one',encrypted:await f.client.encryptMessage({...base,messageId:'one'})});
+ const encrypted=await f.client.encryptMessage({...base,messageId:'two'});
+ const original=f.sessions.assertSessionSender.bind(f.sessions);
+ f.sessions.assertSessionSender=async(...args)=>{
+  await original(...args);
+  const state=JSON.parse(f.store.rows.get('bob')!);
+  Object.values(state.sessionSenders).forEach((value)=>{(value as {accountId:string}).accountId='mallory';});
+  f.store.rows.set('bob',JSON.stringify(state));
+ };
+ await assert.rejects(f.client.decryptMessage({...receive,messageId:'two',encrypted}),/attribution/);
+});

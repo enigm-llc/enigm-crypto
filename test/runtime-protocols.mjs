@@ -24,11 +24,15 @@ if (mode !== 'native') {
 }
 const api = mode === 'cjs'
   ? createRequire(import.meta.url)('@enigm/crypto')
-  : await import('@enigm/crypto');
+  : await import('@enigm/crypto').then(module => module.default ?? module);
 if (mode === 'native') {
   assert.equal(globalThis.TextEncoder, nativeEncoder);
   assert.equal(globalThis.TextDecoder, nativeDecoder);
-} else assert.equal(globalThis.TextDecoder, undefined);
+} else {
+  assert.equal(globalThis.TextDecoder, undefined);
+  assert.equal(globalThis.TextEncoder, undefined);
+  assert.equal(globalThis.Buffer, undefined);
+}
 const alice = api.generateIdentity(entropy);
 const bob = api.generateIdentity(entropy);
 const expiresAt = 4_000_000_000_000;

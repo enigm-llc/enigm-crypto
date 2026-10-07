@@ -1,4 +1,3 @@
-import '../core/text-encoder-runtime.js';
 import { gcm } from '@noble/ciphers/aes.js';
 import { x25519 } from '@noble/curves/ed25519.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
@@ -83,7 +82,7 @@ export const seal = (options: SealOptions): HybridEnvelope => {
     };
     return {
       ...unsigned,
-      signature: signHybrid(options.sender, envelopeSignatureTranscript(unsigned, options.context)),
+      signature: signHybrid(options.sender, envelopeSignatureTranscript(unsigned, options.context), randomSource),
     };
   } finally {
     wipe(ephemeral.secretKey, encapsulated.sharedSecret, classicalSecret, key);

@@ -1,11 +1,10 @@
-import '../core/text-encoder-runtime.js';
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { randomBytes } from '@noble/post-quantum/utils.js';
 
 import { CIPHER_SUITE, PROTOCOL_VERSION, type HybridSignature, type PrivateIdentity, type PublicIdentity, type RandomSource } from '../core/types.js';
-import { clone, concat, equal, frame, utf8, wipe } from '../core/bytes.js';
+import { clone, concat, equal, frame, utf8, wipe, assertLength } from '../core/bytes.js';
 import { identityTranscript } from '../protocols/transcript.js';
 
 const ML_DSA_CONTEXT = utf8('Enigm-PQ-V2-Identity');
@@ -42,13 +41,17 @@ export const publicIdentity = (identity: PrivateIdentity): PublicIdentity => ({
   ed25519PublicKey: clone(identity.ed25519PublicKey),
 });
 
-export const signHybrid = (identity: PrivateIdentity, message: Uint8Array): HybridSignature => {
+export const signHybrid = (identity: PrivateIdentity, message: Uint8Array, randomSource: RandomSource = randomBytes): HybridSignature => {
   validatePrivateIdentity(identity);
   const transcript = frame(utf8('enigm-hybrid-signature-v2'), message);
-  return {
-    mlDsa: ml_dsa65.sign(transcript, identity.mlDsaSecretKey, { context: ML_DSA_CONTEXT }),
-    ed25519: ed25519.sign(transcript, identity.ed25519SecretKey),
-  };
+  const entropy = randomSource(32);
+  try {
+    assertLength(entropy, 32, 'ML-DSA signing entropy');
+    return {
+      mlDsa: ml_dsa65.sign(transcript, identity.mlDsaSecretKey, { context: ML_DSA_CONTEXT, extraEntropy: entropy }),
+      ed25519: ed25519.sign(transcript, identity.ed25519SecretKey),
+    };
+  } finally { wipe(entropy); }
 };
 
 export const verifyHybrid = (

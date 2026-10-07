@@ -32,6 +32,8 @@ jobs:
       - run: npm test
       - run: npm run examples
       - run: npm run benchmark
+      - run: npm run test:runtime
+      - run: npm run test:package
       - run: npm run pack:verify
       - run: |
           mkdir release

@@ -23,9 +23,10 @@ try {
   const result = babel.transformSync(await readFile(bundle, 'utf8'), {
     presets: [[preset, { enableBabelRuntime: false }]], babelrc: false, configFile: false,
   });
-  await writeFile(transformed, result.code);
+  await writeFile(transformed, 'delete globalThis.TextEncoder;\ndelete globalThis.TextDecoder;\n' + result.code);
   const execution = spawnSync(hermes, [transformed], { encoding: 'utf8' });
   assert.equal(execution.status, 0, execution.stderr);
+  assert.match(execution.stdout, /Hermes SDK: authenticated text bootstrap and established sessions passed\./, execution.stderr);
   console.log(execution.stdout.trim());
 } finally {
   await rm(temporary, { recursive: true, force: true });

@@ -1,4 +1,3 @@
-import '../core/text-encoder-runtime.js';
 import { decodeUtf8 } from '../core/utf8.js';
 import { gcm } from '@noble/ciphers/aes.js';
 import { x25519 } from '@noble/curves/ed25519.js';
@@ -264,6 +263,7 @@ export const sealSender = (options: SealSenderOptions): SealedSenderEnvelope => 
   const signature = signHybrid(
     options.sender,
     innerTranscript(publicSender, header.recipientKemKeyId, options.plaintext, options.context, now),
+    randomSource,
   );
   const inner = encodeInner(publicSender, options.plaintext, signature);
   const key = deriveKey(encapsulated.sharedSecret, classicalSecret, associatedData, options.supplementalSecret);
