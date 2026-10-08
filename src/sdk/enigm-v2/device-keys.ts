@@ -82,7 +82,7 @@ export const createEnigmDeviceClient = (options: {
       ),
     publicLastResortBundleEncoded: (accountId: string) =>
       withKeys(accountId, (state) => {
-        const item = state.bundles.find((item) => item.lastResort);
+        const item = state.bundles.find((item) => item.lastResort && item.bundle.expiresAt > (options.now ?? Date.now)());
         if (!item)
           throw new Error("EnigmV2 last-resort bundle is unavailable.");
         return encodeBase64(
