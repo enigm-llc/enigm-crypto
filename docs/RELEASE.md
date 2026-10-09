@@ -7,11 +7,11 @@ notices. It remains unreleased while development and validation are incomplete. 
 registry is `https://registry.npmjs.org`; final releases use the `latest` dist-tag. The workflows
 reject prerelease versions and versions below 1.0.0.
 
-Publish only after the agreed feature scope is complete, physical iOS/Android acceptance and
-independent cryptographic review are complete, and the documented security/privacy requirements
-and external release controls have been verified. Participant anonymity is currently unmet; resolve
-that requirement before approving the final release. A version number or passing CI does not
-establish production readiness or anonymity.
+Publish only after the library feature scope is complete, the advertised runtime integrations and
+independent cryptographic review are complete, and the documented cryptographic security requirements
+and external release controls have been verified. Network anonymity, account management and
+server routing are host responsibilities, not prerequisites for this encryption library release.
+A version number or passing CI does not establish production readiness or participant anonymity.
 
 The repository prepares two processes:
 

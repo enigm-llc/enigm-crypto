@@ -2,8 +2,9 @@
 
 ## Goals and present guarantees
 
-Enigm aims to keep both content and participant relationships unknown to service operators.
-These are separate goals. This library supplies cryptographic building blocks; the existing
+This library protects encrypted content and authenticates cryptographic identities and protocol
+state. Hiding participant relationships from service operators is a separate product/transport goal,
+outside this encryption library release. This library supplies cryptographic building blocks; the existing
 Enigm V2 message SDK protects content but does not achieve server-blind participant anonymity.
 It is not a zero-knowledge proof system, anonymity network or private contact-discovery service.
 

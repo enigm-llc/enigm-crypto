@@ -32,8 +32,8 @@ for the cryptographic implementation.
 - Complete independent cryptographic review before a stable release.
 - Treat changes to transcripts, framing, key derivation or suite identifiers as protocol changes.
 
-Do not create a final release until development, device acceptance and independent cryptographic
-review are complete and the agreed privacy requirements are met. CI npm submission must use trusted publishing and
+Do not create a final release until library development, advertised runtime acceptance and independent
+cryptographic review are complete. Network anonymity and account management remain host responsibilities. CI npm submission must use trusted publishing and
 the exact tarball produced by the protected release workflow, with maintainer 2FA approval of
 the staged version. Namespace bootstrap and external release controls are documented in
 [Release](docs/RELEASE.md).

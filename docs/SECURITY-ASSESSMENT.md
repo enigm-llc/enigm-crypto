@@ -5,6 +5,12 @@ locked dependencies, packed artifacts, public examples and release workflow. Thi
 review with regression tests, not an independent cryptographic audit, penetration-test certification,
 formal proof or guarantee of anonymity. No live production system was attacked or modified.
 
+The scope is the encryption library: confidentiality and integrity of encrypted content, key lifecycle,
+authenticated identities/signatures, strict encoding, state persistence and package integrity. IP hiding,
+account management, anonymous transport, server routing and push infrastructure are outside this scope.
+The metadata observations below bound the library's claims; they do not require redesigning backend
+infrastructure before publishing a correctly scoped E2EE library.
+
 ## Findings and disposition
 
 | Finding | Disposition | Remaining boundary |
@@ -55,7 +61,7 @@ the composed protocol are vulnerability-free. Re-run both checks for each releas
 The message SDK does not meet server-blind participant anonymity. Its binding authority knows account/
 device mappings, clear key packets disclose relationships, and network/provider metadata remain
 observable. See [Privacy](PRIVACY.md). Meeting that objective requires a new reviewed protocol and
-coordinated host design; encryption or hashing alone does not establish it.
+coordinated host design outside this release scope; encryption or hashing alone does not establish it.
 
 Independent cryptographic/state-machine/side-channel review is required before a stable release.
 JavaScript secret erasure is best effort, attachment operations buffer entire files, secure storage
@@ -65,5 +71,6 @@ metadata-observing service are outside the library's content-confidentiality gua
 
 Publication also depends on namespace ownership, maintainer 2FA, configured npm OIDC trust and
 protected GitHub environments/tags. Their existence cannot be inferred from source checks. A package
-can be a technically verified development candidate without meeting the stronger production/anonymity
-objective. Do not label this review as independent certification or the candidate as fully anonymous.
+can be a verified E2EE library without providing network or participant anonymity. Host anonymity is
+not a library release requirement. Do not label this review as independent certification or the
+package as fully anonymous; independent cryptographic review still remains required.
