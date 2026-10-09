@@ -26,6 +26,15 @@ import {
   type GroupEpochCiphertext,
   type RatchetCiphertext,
 } from "../../protocols/index.js";
+const assertTransferEntries = <T>(current: Record<string, T>, transferred: Record<string, T>, label: string): void => {
+  for (const [key, value] of Object.entries(current)) {
+    const transferredValue = transferred[key];
+    if (transferredValue && JSON.stringify(transferredValue) !== JSON.stringify(value)) {
+      throw new Error(`Conflicting EnigmV2 ${label} during device transfer.`);
+    }
+  }
+};
+
 const STORAGE_VERSION = 5;
 const RECOVERY_KEY_BYTES = 32;
 const MAX_SESSIONS = 10_000;
@@ -58,7 +67,7 @@ const validateSender = (sender: EnigmSessionSender): void => {
 };
 const assertSender = (stored: StoredMessagingCryptoEnigmV2, key: string, accountId: string, deviceId: string): void => {
   const sender = stored.sessionSenders?.[key];
-  if (!sender || sender.accountId !== accountId || sender.deviceId !== deviceId)
+  if (sender?.accountId !== accountId || sender.deviceId !== deviceId)
     throw new Error('EnigmV2 session sender attribution mismatch or unavailable.');
 };
 type StoredMessagingCryptoEnigmV2 = {
@@ -308,7 +317,10 @@ class MessagingCryptoManagerEnigmV2 {
             throw new Error("EnigmV2 session capacity reached.");
           }
           stored.sessions[key] = encodeSession(expected);
-          if (sender) (stored.sessionSenders ??= {})[key] = { ...sender };
+          if (sender) {
+            stored.sessionSenders ??= {};
+            stored.sessionSenders[key] = { ...sender };
+          }
           await this.persist(accountId, stored);
           return "initialized";
         }
@@ -326,7 +338,8 @@ class MessagingCryptoManagerEnigmV2 {
               "EnigmV2 bootstrap does not match the current session."
             );
           if (sender) {
-            (stored.sessionSenders ??= {})[key] = { ...sender };
+            stored.sessionSenders ??= {};
+            stored.sessionSenders[key] = { ...sender };
             await this.persist(accountId, stored);
           }
           return "matching-session";
@@ -622,28 +635,8 @@ class MessagingCryptoManagerEnigmV2 {
           "Conflicting EnigmV2 recovery key during device transfer."
         );
       }
-      for (const [key, value] of Object.entries(current.sessions)) {
-        const transferredValue = transferred.sessions[key];
-        if (
-          transferredValue &&
-          JSON.stringify(transferredValue) !== JSON.stringify(value)
-        ) {
-          throw new Error(
-            "Conflicting EnigmV2 messaging session during device transfer."
-          );
-        }
-      }
-      for (const [key, value] of Object.entries(current.groups)) {
-        const transferredValue = transferred.groups[key];
-        if (
-          transferredValue &&
-          JSON.stringify(transferredValue) !== JSON.stringify(value)
-        ) {
-          throw new Error(
-            "Conflicting EnigmV2 group state during device transfer."
-          );
-        }
-      }
+      assertTransferEntries(current.sessions, transferred.sessions, 'messaging session');
+      assertTransferEntries(current.groups, transferred.groups, 'group state');
       for (const [key, sender] of Object.entries(current.sessionSenders ?? {})) {
         const other = transferred.sessionSenders?.[key];
         if (other && (sender.accountId !== other.accountId || sender.deviceId !== other.deviceId || sender.identityKeyId !== other.identityKeyId))
@@ -791,7 +784,10 @@ class MessagingCryptoManagerEnigmV2 {
         plaintext = decrypted.plaintext;
         const authenticated = await authenticate(plaintext);
         stored.sessions[key] = encodeSession(next);
-        if (sender) (stored.sessionSenders ??= {})[key] = { ...sender };
+        if (sender) {
+          stored.sessionSenders ??= {};
+          stored.sessionSenders[key] = { ...sender };
+        }
         await this.persist(accountId, stored);
         return authenticated;
       } finally {

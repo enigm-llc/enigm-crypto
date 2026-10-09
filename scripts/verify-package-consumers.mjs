@@ -1,14 +1,29 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, readdir, access } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve, dirname, isAbsolute } from 'node:path';
+// npm run provides its already-running CLI path; direct invocation also supports
+// standard Node and distribution layouts. No executable is searched through PATH.
+const npmCliCandidates = [
+ ...(process.env.npm_execpath && isAbsolute(process.env.npm_execpath) ? [process.env.npm_execpath] : []),
+ join(dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js'),
+ join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js'),
+ '/usr/share/nodejs/npm/bin/npm-cli.js',
+];
+const npmCli = (await Promise.all(npmCliCandidates.map(async path => {
+ try { await access(path); return path; } catch { return null; }
+}))).find(Boolean);
+if (!npmCli) throw new Error('npm CLI not found; run this check through npm run test:package.');
+const tarExecutable = process.platform === 'win32'
+ ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
+ : '/usr/bin/tar';
 const temporary=await mkdtemp(join(tmpdir(),'enigm-consumer-'));
 try {
- execFileSync('npm',['pack','--ignore-scripts','--pack-destination',temporary],{stdio:'pipe'});
+ execFileSync(process.execPath,[npmCli,'pack','--ignore-scripts','--pack-destination',temporary],{stdio:'pipe'});
  const tarball=(await readdir(temporary)).find(name=>name.endsWith('.tgz'));
  const installed=join(temporary,'node_modules/@enigm/crypto');await mkdir(installed,{recursive:true});
- execFileSync('tar',['-xzf',join(temporary,tarball),'--strip-components=1','-C',installed]);
+ execFileSync(tarExecutable,['-xzf',join(temporary,tarball),'--strip-components=1','-C',installed]);
  // Deliberately no dependencies or development tools installed in the consumer.
  for(const mode of ['import','require','react-native']){
   const source=`delete globalThis.TextEncoder;delete globalThis.TextDecoder;delete globalThis.Buffer;

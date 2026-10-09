@@ -19,7 +19,12 @@ const canonicalMembers = (memberDeviceIds: readonly string[]): Uint8Array => {
   if (memberDeviceIds.length < 1 || memberDeviceIds.length > 10_000) {
     throw new Error('Invalid group member count.');
   }
-  const normalized = [...new Set(memberDeviceIds)].sort();
+  const normalized = [...new Set(memberDeviceIds)].sort((left, right) => {
+    // Protocol canonicalization uses UTF-16 code units, independent of locale.
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
+  });
   if (normalized.length !== memberDeviceIds.length || normalized.some((id) => id.length < 1 || id.length > 256)) {
     throw new Error('Invalid or duplicate group member device identifier.');
   }
@@ -67,7 +72,7 @@ export const rotateGroupEpoch = (
   randomSource: RandomSource = randomBytes,
 ): GroupEpochState => {
   validateGroupEpochState(previous);
-  if (previous.epoch >= 0xffff_ffff) throw new Error('Group epoch is exhausted.');
+  if (previous.epoch >= 0xffffffff) throw new Error('Group epoch is exhausted.');
   const membersHash = deriveMembersHash(memberDeviceIds);
   const secret = randomSource(32);
   assertLength(secret, 32, 'Group epoch secret');

@@ -15,7 +15,7 @@ const entropy = (length: number): Uint8Array => {
 Object.defineProperty(globalThis, 'crypto', { value: {
   getRandomValues: (output: Uint8Array) => { output.set(entropy(output.length)); return output; },
 } });
-check(typeof globalThis.TextDecoder === 'undefined');
+check(globalThis.TextDecoder === undefined);
 equal(api.utf8('ñ😀\0\ud800'), Uint8Array.of(0xc3, 0xb1, 0xf0, 0x9f, 0x98, 0x80, 0, 0xef, 0xbf, 0xbd));
 const alice = api.generateIdentity(entropy);
 const bob = api.generateIdentity(entropy);
@@ -42,9 +42,9 @@ for (const [magic, decode] of [['ENIGMPQ2', api.decodeEnvelope], ['ENIGMSS2', ap
 }
 const attachment = api.encryptEnigmAttachment(Uint8Array.of(0, 255, 128, 10), entropy);
 equal(api.decryptEnigmAttachment(attachment.encrypted, attachment.fileKey), Uint8Array.of(0, 255, 128, 10));
-check(typeof globalThis.TextEncoder === 'undefined');
-check(typeof globalThis.TextDecoder === 'undefined');
-check(typeof (globalThis as unknown as { Buffer?: unknown }).Buffer === 'undefined');
+check(globalThis.TextEncoder === undefined);
+check(globalThis.TextDecoder === undefined);
+check((globalThis as unknown as { Buffer?: unknown }).Buffer === undefined);
 (globalThis as unknown as { print: (value: string) => void }).print('Hermes RN 0.77: cold import, UTF-8, identity, KEM, signatures, codecs and both encrypted envelope protocols and SDK binary attachments passed.');
 
 import binding from './fixtures/hermes-binding.json';
@@ -57,26 +57,30 @@ const runSdk = async (): Promise<void> => {
   };
   let consumed = 0;
   const device = api.createEnigmDeviceClient({randomSource:entropy, now:()=>2_000_000_000_000,store:{
-    load: async (id: string) => {
+    load: (id: string) => {
       const identity = id === 'alice' ? sdkAlice : sdkBob;
       const bundle = id === 'alice' ? bundles.alice : bundles.bob;
-      return {identity:{...identity,mlDsaSecretKey:identity.mlDsaSecretKey.slice(),ed25519SecretKey:identity.ed25519SecretKey.slice()},bundles:[{lastResort:id==='alice',bundle:{...bundle,mlKemSecretKey:bundle.mlKemSecretKey.slice(),x25519SecretKey:bundle.x25519SecretKey.slice()}}]};
+      return Promise.resolve({identity:{...identity,mlDsaSecretKey:identity.mlDsaSecretKey.slice(),ed25519SecretKey:identity.ed25519SecretKey.slice()},bundles:[{lastResort:id==='alice',bundle:{...bundle,mlKemSecretKey:bundle.mlKemSecretKey.slice(),x25519SecretKey:bundle.x25519SecretKey.slice()}}]});
     },
-    consume:async()=>{ consumed++; },
+    consume:()=>{ consumed++; return Promise.resolve(); },
   }});
   const rows = new Map<string,string>();
   const sessions = api.createEnigmSessionClient({randomSource:entropy,store:{
-    read:async id=>rows.get(id)??null,write:async(id,value)=>{rows.set(id,value);},delete:async id=>{rows.delete(id);},exclusive:async(_id,action)=>action(),
+    read:id=>Promise.resolve(rows.get(id)??null),write:(id,value)=>{rows.set(id,value);return Promise.resolve();},delete:id=>{rows.delete(id);return Promise.resolve();},exclusive:(_id,action)=>action(),
   }});
   const messages = api.createEnigmMessageClient({device,sessions,randomSource:entropy,logPublicKey:binding.logPublicKey});
   const target={userId:'bob',deviceId:'bob-device',encodedIdentity:await device.publicIdentityEncoded('bob'),encodedBundle:api.encodeBase64(api.encodePublicKemBundle(api.publicKemBundle(bundles.bob))),identityKeyId:api.encodeBase64(sdkBob.keyId)};
-  for (const messageId of ['bootstrap','established']) {
+  const roundTrip = async (messageId: string): Promise<void> => {
     const plaintext=api.utf8(`Hermes texto 😀 ${messageId}`);
     const encrypted=await messages.encryptMessage({accountId:'alice',conversationId:'hermes',messageId,senderDeviceId:'alice-device',senderBinding:binding.senderBinding,plaintext,targets:[target]});
     equal(await messages.decryptMessage({accountId:'bob',conversationId:'hermes',messageId,currentDeviceId:'bob-device',expectedSenderUserId:'alice',encrypted}),plaintext);
-  }
+  };
+  await roundTrip('bootstrap');
+  await roundTrip('established');
   check(consumed===1);
-  check(typeof globalThis.TextEncoder==='undefined' && typeof globalThis.TextDecoder==='undefined');
+  check(globalThis.TextEncoder === undefined && globalThis.TextDecoder === undefined);
   (globalThis as unknown as {print:(value:string)=>void}).print('Hermes SDK: authenticated text bootstrap and established sessions passed.');
 };
-runSdk().catch(error=>{ throw error; });
+// Hermes cannot execute top-level await. The runner requires the final success
+// marker, so any rejection or incomplete async run fails the verification.
+void runSdk();

@@ -49,7 +49,7 @@ const validateSafeSize = (value: number, label: string): void => {
 
 const validateTextLine = (value: string, label: string): void => {
   const hasControlCharacter = Array.from(value).some((character) => {
-    const code = character.charCodeAt(0);
+    const code = character.codePointAt(0)!;
     return code <= 0x1f || code === 0x7f;
   });
   if (!value || hasControlCharacter) throw new Error(`${label} is invalid.`);
@@ -85,7 +85,9 @@ const decodeBase64 = (value: string): Uint8Array => {
   if (value.length === 0 || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(value)) {
     throw new Error('Invalid base64 value.');
   }
-  const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
+  let padding = 0;
+  if (value.endsWith('==')) padding = 2;
+  else if (value.endsWith('=')) padding = 1;
   const output = new Uint8Array((value.length / 4) * 3 - padding);
   let outputOffset = 0;
   for (let offset = 0; offset < value.length; offset += 4) {
@@ -171,8 +173,7 @@ export const rfc6962RootFromFrontier = (
   if (treeSize === 0) return clone(EMPTY_TREE_HASH);
 
   let root: Uint8Array | null = null;
-  for (let level = 0; level < frontier.length; level += 1) {
-    const node = frontier[level];
+  for (const node of frontier) {
     if (node) root = root ? rfc6962NodeHash(node, root) : clone(node);
   }
   if (!root) throw new Error('Merkle frontier has no root.');
@@ -303,6 +304,62 @@ export const rfc6962ConsistencyProof = (
   return consistencySubproof(oldSize, entries, true);
 };
 
+const initializeConsistencyPath = (
+  oldSize: number, newSize: number, oldRoot: Uint8Array, proof: readonly Uint8Array[],
+): { previousIndex: number; currentIndex: number; proofIndex: number; previousHash: Uint8Array; currentHash: Uint8Array } | null => {
+  let previousIndex = oldSize - 1;
+  let currentIndex = newSize - 1;
+  while ((previousIndex & 1) === 1) {
+    previousIndex = Math.floor(previousIndex / 2);
+    currentIndex = Math.floor(currentIndex / 2);
+  }
+
+  let proofIndex = 0;
+  let previousHash: Uint8Array;
+  let currentHash: Uint8Array;
+  if (previousIndex === 0) {
+    previousHash = clone(oldRoot);
+    currentHash = clone(oldRoot);
+  } else {
+    const first = proof[proofIndex++];
+    if (!first) return null;
+    assertLength(first, 32, 'Merkle proof hash');
+    previousHash = clone(first);
+    currentHash = clone(first);
+  }
+
+  return { previousIndex, currentIndex, proofIndex, previousHash, currentHash };
+};
+
+const verifyConsistencyPath = (
+  oldSize: number, newSize: number, oldRoot: Uint8Array, newRoot: Uint8Array,
+  proof: readonly Uint8Array[],
+): boolean => {
+  const initial = initializeConsistencyPath(oldSize, newSize, oldRoot, proof);
+  if (!initial) return false;
+  let { previousIndex, currentIndex, proofIndex, previousHash, currentHash } = initial;
+
+  for (; proofIndex < proof.length; proofIndex += 1) {
+    const sibling = proof[proofIndex];
+    if (!sibling || currentIndex === 0) return false;
+    assertLength(sibling, 32, 'Merkle proof hash');
+    if ((previousIndex & 1) === 1 || previousIndex === currentIndex) {
+      previousHash = rfc6962NodeHash(sibling, previousHash);
+      currentHash = rfc6962NodeHash(sibling, currentHash);
+      while ((previousIndex & 1) === 0 && previousIndex !== 0) {
+        previousIndex = Math.floor(previousIndex / 2);
+        currentIndex = Math.floor(currentIndex / 2);
+      }
+    } else {
+      currentHash = rfc6962NodeHash(currentHash, sibling);
+    }
+    previousIndex = Math.floor(previousIndex / 2);
+    currentIndex = Math.floor(currentIndex / 2);
+  }
+
+  return currentIndex === 0 && equal(previousHash, oldRoot) && equal(currentHash, newRoot);
+};
+
 export const verifyRfc6962Consistency = (
   oldSize: number,
   newSize: number,
@@ -319,46 +376,7 @@ export const verifyRfc6962Consistency = (
     if (oldSize === 0) return proof.length === 0;
     if (oldSize === newSize) return proof.length === 0 && equal(oldRoot, newRoot);
 
-    let previousIndex = oldSize - 1;
-    let currentIndex = newSize - 1;
-    while ((previousIndex & 1) === 1) {
-      previousIndex = Math.floor(previousIndex / 2);
-      currentIndex = Math.floor(currentIndex / 2);
-    }
-
-    let proofIndex = 0;
-    let previousHash: Uint8Array;
-    let currentHash: Uint8Array;
-    if (previousIndex === 0) {
-      previousHash = clone(oldRoot);
-      currentHash = clone(oldRoot);
-    } else {
-      const first = proof[proofIndex++];
-      if (!first) return false;
-      assertLength(first, 32, 'Merkle proof hash');
-      previousHash = clone(first);
-      currentHash = clone(first);
-    }
-
-    for (; proofIndex < proof.length; proofIndex += 1) {
-      const sibling = proof[proofIndex];
-      if (!sibling || currentIndex === 0) return false;
-      assertLength(sibling, 32, 'Merkle proof hash');
-      if ((previousIndex & 1) === 1 || previousIndex === currentIndex) {
-        previousHash = rfc6962NodeHash(sibling, previousHash);
-        currentHash = rfc6962NodeHash(sibling, currentHash);
-        while ((previousIndex & 1) === 0 && previousIndex !== 0) {
-          previousIndex = Math.floor(previousIndex / 2);
-          currentIndex = Math.floor(currentIndex / 2);
-        }
-      } else {
-        currentHash = rfc6962NodeHash(currentHash, sibling);
-      }
-      previousIndex = Math.floor(previousIndex / 2);
-      currentIndex = Math.floor(currentIndex / 2);
-    }
-
-    return currentIndex === 0 && equal(previousHash, oldRoot) && equal(currentHash, newRoot);
+    return verifyConsistencyPath(oldSize, newSize, oldRoot, newRoot, proof);
   } catch {
     return false;
   }
@@ -418,10 +436,10 @@ export const verifyC2spLogSignature = (
     const expectedId = keyId(signer.name, LOG_SIGNATURE_TYPE, signer.publicKey);
     for (const line of signatureLines(signedNote, noteText)) {
       const match = new RegExp(
-        `^\\u2014 ([^ ]{1,${MAX_KEY_NAME_BYTES}}) ([A-Za-z0-9+/]{${LOG_SIGNATURE_BASE64_LENGTH - 2},${LOG_SIGNATURE_BASE64_LENGTH}}={0,2})$`,
+        String.raw`^\u2014 ([^ ]{1,${MAX_KEY_NAME_BYTES}}) ([A-Za-z0-9+/]{${LOG_SIGNATURE_BASE64_LENGTH - 2},${LOG_SIGNATURE_BASE64_LENGTH}}={0,2})$`,
         'u',
       ).exec(line);
-      if (!match || match[1] !== signer.name) continue;
+      if (match?.[1] !== signer.name) continue;
       if ((match[2] ?? '').length !== LOG_SIGNATURE_BASE64_LENGTH) continue;
       const encoded = decodeBase64(match[2] ?? '');
       if (encoded.length !== 68 || !equal(encoded.slice(0, 4), expectedId)) continue;
@@ -448,10 +466,10 @@ export const verifyC2spWitnessCosignature = (
     const expectedId = keyId(witness.name, WITNESS_SIGNATURE_TYPE, witness.publicKey);
     for (const line of signatureLines(signedNote, noteText)) {
       const match = new RegExp(
-        `^\\u2014 ([^ ]{1,${MAX_KEY_NAME_BYTES}}) ([A-Za-z0-9+/]{${WITNESS_SIGNATURE_BASE64_LENGTH - 2},${WITNESS_SIGNATURE_BASE64_LENGTH}}={0,2})$`,
+        String.raw`^\u2014 ([^ ]{1,${MAX_KEY_NAME_BYTES}}) ([A-Za-z0-9+/]{${WITNESS_SIGNATURE_BASE64_LENGTH - 2},${WITNESS_SIGNATURE_BASE64_LENGTH}}={0,2})$`,
         'u',
       ).exec(line);
-      if (!match || match[1] !== witness.name) continue;
+      if (match?.[1] !== witness.name) continue;
       if ((match[2] ?? '').length !== WITNESS_SIGNATURE_BASE64_LENGTH) continue;
       const encoded = decodeBase64(match[2] ?? '');
       if (encoded.length !== 76 || !equal(encoded.slice(0, 4), expectedId)) continue;

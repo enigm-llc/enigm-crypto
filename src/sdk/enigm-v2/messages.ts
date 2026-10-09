@@ -15,8 +15,8 @@ import {
 import type {
   EncodedRatchetMessageEnigmV2,
   EncodedRecoveryContentKeyEnigmV2,
+  createEnigmSessionClient,
 } from "./session-state.js";
-import type { createEnigmSessionClient } from "./session-state.js";
 import type { createEnigmDeviceClient } from "./device-keys.js";
 import { verifyEnigmIdentityBinding } from "./identity-binding.js";
 export type MessageDeviceTargetEnigmV2 = {
@@ -226,7 +226,7 @@ export const createEnigmMessageClient = (options: {
         rootKey?: Uint8Array;
         bootstrapEnvelope?: string;
       }> = [];
-      for (const target of input.targets) {
+      const prepareTarget = async (target: MessageDeviceTargetEnigmV2): Promise<void> => {
         const locator = sessionLocator(
           input.conversationId,
           input.senderDeviceId,
@@ -275,7 +275,7 @@ export const createEnigmMessageClient = (options: {
             ),
             recoveryContentKey: ownRecovery,
           });
-          continue;
+          return;
         }
         let rootKey: Uint8Array | undefined;
         if (!(await options.sessions.hasSession(input.accountId, locator))) {
@@ -309,7 +309,12 @@ export const createEnigmMessageClient = (options: {
           ...(rootKey === undefined ? {} : { rootKey }),
           ...(bootstrapEnvelope === undefined ? {} : { bootstrapEnvelope }),
         });
-      }
+      };
+      // Preserve target order and sequential storage operations.
+      await input.targets.reduce(
+        (previous, target) => previous.then(() => prepareTarget(target)),
+        Promise.resolve()
+      );
       const ratchetResults = ratchetTargets.length
         ? await options.sessions.encryptMany(
             input.accountId,
@@ -385,41 +390,10 @@ export const createEnigmMessageClient = (options: {
     }
   };
 
-  const decryptMessageEnigmV2 = async (
-    input: DecryptMessageInputEnigmV2
-  ): Promise<Uint8Array> => {
-    if (input.encrypted.version !== 2 && input.encrypted.version !== 3) {
-      throw new Error("Unsupported encrypted message version.");
-    }
-    const historicalDeviceIds = await options.sessions.historicalDeviceIds(
-      input.accountId
-    );
-    const acceptedDeviceIds = new Set([
-      input.currentDeviceId,
-      ...historicalDeviceIds,
-    ]);
-    const packet = input.encrypted.keyPackets.find((item) =>
-      acceptedDeviceIds.has(item.recipientDeviceId)
-    );
-    if (!packet)
-      throw new Error("This device is not an encrypted message recipient.");
-    if (packet.recoveryContentKey?.version !== 2) {
-      throw new Error(
-        "The EnigmV2 recovery content-key envelope is unavailable."
-      );
-    }
-    const context = sessionContext(
-      input.conversationId,
-      packet.senderDeviceId,
-      packet.recipientDeviceId
-    );
-    const expectedSessionId = sessionLocator(
-      input.conversationId,
-      packet.senderDeviceId,
-      packet.recipientDeviceId
-    );
-    if (packet.sessionId !== expectedSessionId)
-      throw new Error("Invalid EnigmV2 message session identifier.");
+  const authenticatePacketSender = (
+    input: DecryptMessageInputEnigmV2,
+    packet: MessageKeyPacketEnigmV2
+  ): string | undefined => {
     if (
       input.expectedSenderUserId &&
       packet.senderUserId &&
@@ -454,6 +428,120 @@ export const createEnigmMessageClient = (options: {
         options.logPublicKey
       );
     }
+    return authenticatedSenderUserId;
+  };
+
+  const bootstrapMessage = async (
+    input: DecryptMessageInputEnigmV2,
+    packet: MessageKeyPacketEnigmV2,
+    context: Uint8Array,
+    encryptedContent: ContentCiphertext,
+    authenticatedSenderUserId: string | undefined
+  ): Promise<Uint8Array> => {
+    if (!packet.bootstrapEnvelope || !packet.senderIdentity) {
+      throw new Error("Invalid EnigmV2 message session bootstrap.");
+    }
+    const opened = await options.device.openSessionEncodedPending(
+      input.accountId,
+      packet.senderIdentity,
+      packet.bootstrapEnvelope,
+      context,
+      packet.senderIdentityKeyId
+    );
+    try {
+      const plaintext = await options.sessions.bootstrapDecryptAndCommit(
+        input.accountId,
+        packet.sessionId,
+        opened.plaintext,
+        packet.wrappedContentKey!,
+        context,
+        (contentKey) =>
+          decryptContent(
+            contentKey,
+            encryptedContent,
+            contentContext(
+              input.conversationId,
+              input.messageId,
+              packet.senderDeviceId
+            )
+          ),
+        { accountId: authenticatedSenderUserId!, deviceId: packet.senderDeviceId, identityKeyId: packet.senderIdentityKeyId! }
+      );
+      if (opened.consumable) {
+        await options.device.consumeOpenedSessionKey(
+          input.accountId,
+          opened.keyId
+        );
+      }
+      return plaintext;
+    } finally {
+      wipe(opened.plaintext);
+    }
+  };
+
+  const migrateSessionSender = async (
+    input: DecryptMessageInputEnigmV2,
+    packet: MessageKeyPacketEnigmV2,
+    context: Uint8Array,
+    hasBootstrap: boolean,
+    sessionExists: boolean,
+    authenticatedSenderUserId: string | undefined
+  ): Promise<void> => {
+    // Upgrade legacy persisted sessions only from a signed envelope matching their root.
+    if (hasBootstrap && sessionExists && !(await options.sessions.hasSessionSender(input.accountId, packet.sessionId))) {
+      if (!packet.bootstrapEnvelope || !packet.senderIdentity || !authenticatedSenderUserId || !packet.senderIdentityKeyId)
+        throw new Error('EnigmV2 sender attribution migration requires an authenticated bootstrap.');
+      const opened = await options.device.openSessionEncodedPending(input.accountId, packet.senderIdentity, packet.bootstrapEnvelope, context, packet.senderIdentityKeyId);
+      try {
+        await options.sessions.initializeOrVerifySession(input.accountId, packet.sessionId, opened.plaintext, context, 'responder',
+          { accountId: authenticatedSenderUserId, deviceId: packet.senderDeviceId, identityKeyId: packet.senderIdentityKeyId });
+      } finally { wipe(opened.plaintext); }
+    }
+  };
+
+  const selectMessagePacket = async (input: DecryptMessageInputEnigmV2): Promise<{
+    packet: MessageKeyPacketEnigmV2; context: Uint8Array;
+  }> => {
+    if (input.encrypted.version !== 2 && input.encrypted.version !== 3) {
+      throw new Error("Unsupported encrypted message version.");
+    }
+    const historicalDeviceIds = await options.sessions.historicalDeviceIds(
+      input.accountId
+    );
+    const acceptedDeviceIds = new Set([
+      input.currentDeviceId,
+      ...historicalDeviceIds,
+    ]);
+    const packet = input.encrypted.keyPackets.find((item) =>
+      acceptedDeviceIds.has(item.recipientDeviceId)
+    );
+    if (!packet)
+      throw new Error("This device is not an encrypted message recipient.");
+    if (packet.recoveryContentKey?.version !== 2) {
+      throw new Error(
+        "The EnigmV2 recovery content-key envelope is unavailable."
+      );
+    }
+    const context = sessionContext(
+      input.conversationId,
+      packet.senderDeviceId,
+      packet.recipientDeviceId
+    );
+    const expectedSessionId = sessionLocator(
+      input.conversationId,
+      packet.senderDeviceId,
+      packet.recipientDeviceId
+    );
+    if (packet.sessionId !== expectedSessionId)
+      throw new Error("Invalid EnigmV2 message session identifier.");
+    return { packet, context };
+  };
+
+  const decryptMessageEnigmV2 = async (
+    input: DecryptMessageInputEnigmV2
+  ): Promise<Uint8Array> => {
+    const { packet, context } = await selectMessagePacket(input);
+    const authenticatedSenderUserId = authenticatePacketSender(input, packet);
     if (packet.recipientDeviceId === packet.senderDeviceId) {
       if (
         authenticatedSenderUserId &&
@@ -491,58 +579,11 @@ export const createEnigmMessageClient = (options: {
       ciphertext: bytes(input.encrypted.ciphertext),
     };
     if (hasBootstrap && !sessionExists) {
-      if (!packet.bootstrapEnvelope || !packet.senderIdentity) {
-        throw new Error("Invalid EnigmV2 message session bootstrap.");
-      }
-      const opened = await options.device.openSessionEncodedPending(
-        input.accountId,
-        packet.senderIdentity,
-        packet.bootstrapEnvelope,
-        context,
-        packet.senderIdentityKeyId
-      );
-      try {
-        const plaintext = await options.sessions.bootstrapDecryptAndCommit(
-          input.accountId,
-          packet.sessionId,
-          opened.plaintext,
-          packet.wrappedContentKey,
-          context,
-          (contentKey) =>
-            decryptContent(
-              contentKey,
-              encryptedContent,
-              contentContext(
-                input.conversationId,
-                input.messageId,
-                packet.senderDeviceId
-              )
-            ),
-          { accountId: authenticatedSenderUserId!, deviceId: packet.senderDeviceId, identityKeyId: packet.senderIdentityKeyId! }
-        );
-        if (opened.consumable) {
-          await options.device.consumeOpenedSessionKey(
-            input.accountId,
-            opened.keyId
-          );
-        }
-        return plaintext;
-      } finally {
-        wipe(opened.plaintext);
-      }
+      return bootstrapMessage(input, packet, context, encryptedContent, authenticatedSenderUserId);
     } else if (!sessionExists) {
       throw new Error("EnigmV2 message session bootstrap is unavailable.");
     }
-    // Upgrade legacy persisted sessions only from a signed envelope matching their root.
-    if (hasBootstrap && sessionExists && !(await options.sessions.hasSessionSender(input.accountId, packet.sessionId))) {
-      if (!packet.bootstrapEnvelope || !packet.senderIdentity || !authenticatedSenderUserId || !packet.senderIdentityKeyId)
-        throw new Error('EnigmV2 sender attribution migration requires an authenticated bootstrap.');
-      const opened = await options.device.openSessionEncodedPending(input.accountId, packet.senderIdentity, packet.bootstrapEnvelope, context, packet.senderIdentityKeyId);
-      try {
-        await options.sessions.initializeOrVerifySession(input.accountId, packet.sessionId, opened.plaintext, context, 'responder',
-          { accountId: authenticatedSenderUserId, deviceId: packet.senderDeviceId, identityKeyId: packet.senderIdentityKeyId });
-      } finally { wipe(opened.plaintext); }
-    }
+    await migrateSessionSender(input, packet, context, hasBootstrap, sessionExists, authenticatedSenderUserId);
     if (!authenticatedSenderUserId) throw new Error('EnigmV2 session sender attribution is unavailable.');
     await options.sessions.assertSessionSender(input.accountId, packet.sessionId, authenticatedSenderUserId, packet.senderDeviceId);
     if (

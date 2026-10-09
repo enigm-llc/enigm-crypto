@@ -21,7 +21,9 @@ export const decodeBase64 = (value: string): Uint8Array => {
   if (value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(value)) {
     throw new Error("Invalid base64 value.");
   }
-  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  let padding = 0;
+  if (value.endsWith("==")) padding = 2;
+  else if (value.endsWith("=")) padding = 1;
   const output = new Uint8Array((value.length / 4) * 3 - padding);
   let outputOffset = 0;
   for (let offset = 0; offset < value.length; offset += 4) {

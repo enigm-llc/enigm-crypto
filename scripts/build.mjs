@@ -1,8 +1,9 @@
 import { rm, mkdir, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { build } from "esbuild";
-for (const directory of ["dist", "dist-cjs"])
-  await rm(directory, { recursive: true, force: true });
+await Promise.all(["dist", "dist-cjs"].map(directory =>
+  rm(directory, { recursive: true, force: true })
+));
 execFileSync(
   process.execPath,
   [
@@ -21,11 +22,10 @@ const entryPoints = {
   "codecs/index": "src/codecs/index.ts",
   "sdk/index": "src/sdk/index.ts",
 };
-for (const [format, outdir] of [
+await Promise.all([
   ["esm", "dist"],
   ["cjs", "dist-cjs"],
-]) {
-  await build({
+].map(([format, outdir]) => build({
     entryPoints,
     outdir,
     format,
@@ -34,8 +34,7 @@ for (const [format, outdir] of [
     platform: "neutral",
     target: "es2022",
     legalComments: "inline",
-  });
-}
+  })));
 await mkdir("dist-cjs", { recursive: true });
 await writeFile(
   "dist-cjs/package.json",
