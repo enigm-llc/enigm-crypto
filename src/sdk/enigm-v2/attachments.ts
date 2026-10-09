@@ -9,20 +9,33 @@ import {
   decryptContent,
 } from "../../protocols/payload.js";
 export type EnigmAttachment = { version: 2; nonce: string; ciphertext: string };
+export type EnigmAttachmentLimits = { maximumPlaintextBytes?: number };
+const attachmentLimit = (limits: EnigmAttachmentLimits): number => {
+  const maximum = limits.maximumPlaintextBytes ?? 50 * 1024 * 1024;
+  if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 128 * 1024 * 1024)
+    throw new Error("Invalid attachment size limit.");
+  return maximum;
+};
+const base64Length = (length: number): number => 4 * Math.ceil(length / 3);
 const context = utf8("enigm-crypto-v2-attachment");
 /** Existing Enigm attachments encrypt UTF-8 base64 text, not raw file bytes. */
 export const encryptEnigmAttachment = (
   plaintext: Uint8Array,
-  randomSource: RandomSource
+  randomSource: RandomSource,
+  limits: EnigmAttachmentLimits = {}
 ): {
   encrypted: EnigmAttachment;
   fileKey: string;
 } => {
+  const maximum = attachmentLimit(limits);
+  if (plaintext.length > maximum) throw new Error("Attachment exceeds size limit.");
   const key = generateContentKey(randomSource);
+  let encoded: Uint8Array | undefined;
   try {
+    encoded = utf8(encodeBase64(plaintext));
     const encrypted = encryptContent(
       key,
-      utf8(encodeBase64(plaintext)),
+      encoded,
       context,
       randomSource
     );
@@ -36,16 +49,19 @@ export const encryptEnigmAttachment = (
     };
   } finally {
     wipe(key);
+    if (encoded) wipe(encoded);
   }
 };
 export const decryptEnigmAttachment = (
   encrypted: EnigmAttachment,
   fileKey: string,
-  expectedPlaintextSha256?: string
+  expectedPlaintextSha256?: string,
+  limits: EnigmAttachmentLimits = {}
 ): Uint8Array => {
   if (encrypted.version !== 2)
     throw new Error("Invalid EnigmV2 encrypted attachment.");
-  const key = decodeBase64(fileKey);
+  const maximum = attachmentLimit(limits);
+  const key = decodeBase64(fileKey, 32);
   let encoded: Uint8Array | undefined;
   let plaintext: Uint8Array | undefined;
   try {
@@ -53,13 +69,13 @@ export const decryptEnigmAttachment = (
       key,
       {
         version: 2,
-        nonce: decodeBase64(encrypted.nonce),
-        ciphertext: decodeBase64(encrypted.ciphertext),
+        nonce: decodeBase64(encrypted.nonce, 12),
+        ciphertext: decodeBase64(encrypted.ciphertext, base64Length(maximum) + 16),
       },
       context
     );
     // Mobile historically ignored whitespace in recovered base64 text.
-    plaintext = decodeBase64(decodeUtf8(encoded).replace(/\s/g, ""));
+    plaintext = decodeBase64(decodeUtf8(encoded).replace(/\s/g, ""), maximum);
     if (
       expectedPlaintextSha256 !== undefined &&
       bytesToHex(sha256(plaintext)) !== expectedPlaintextSha256

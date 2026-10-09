@@ -77,3 +77,18 @@ check. Require `quorumMet: true` and an authenticated recent head when an operat
 current status. Reject a zero quorum for production policy unless an independently reviewed
 alternative trust mechanism is deliberately used. Consistency/inclusion prove relationships
 between supplied checkpoints, not that a checkpoint is globally latest.
+
+### Required current witness evidence
+
+Pass `requireFreshWitnesses: true` to `verifyIdentity` before authorizing a new send or membership
+change. This requires a positive witness quorum and rejects stale prior-trust continuity before
+persisting a checkpoint. Configure at most 15 witnesses. A zero quorum is only a development policy
+and cannot satisfy this stricter operation. Fresh evidence still does not prove a globally latest head.
+
+### Buffered attachment bounds
+
+Attachment functions accept `EnigmAttachmentLimits` as the third encryption argument and fourth
+decryption argument. `maximumPlaintextBytes` defaults to 50 MiB, with an explicit maximum of 128 MiB.
+Keys and nonces have fixed decoding bounds; ciphertext expansion and recovered base64 are bounded
+before allocating decoded buffers. Hosts must bound downloaded files before reading or parsing them.
+Larger historical files require a separately reviewed policy; wire bytes for supported files are unchanged.

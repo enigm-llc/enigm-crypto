@@ -138,3 +138,19 @@ test("failed session persistence leaves durable ratchet unchanged", async () => 
   );
   assert.equal(rows.get("alice"), before);
 });
+
+test('attachment size limits reject before entropy and bound authenticated decoding', () => {
+ let calls=0;const random=(length:number)=>{calls++;return entropy(length);};
+ assert.throws(()=>encryptEnigmAttachment(Uint8Array.of(1,2),random,{maximumPlaintextBytes:1}),/size limit/);
+ assert.equal(calls,0);
+ const sealed=encryptEnigmAttachment(Uint8Array.of(255),random,{maximumPlaintextBytes:1});
+ assert.deepEqual(decryptEnigmAttachment(sealed.encrypted,sealed.fileKey,undefined,{maximumPlaintextBytes:1}),Uint8Array.of(255));
+ assert.throws(()=>decryptEnigmAttachment({...sealed.encrypted,ciphertext:'A'.repeat(32)},sealed.fileKey,undefined,{maximumPlaintextBytes:1}),/too large/);
+ assert.throws(()=>decryptEnigmAttachment({...sealed.encrypted,nonce:'A'.repeat(20)},sealed.fileKey),/too large/);
+ assert.throws(()=>decryptEnigmAttachment(sealed.encrypted,'A'.repeat(48)),/too large/);
+ for(const maximumPlaintextBytes of [0,-1,Infinity,1.5,128*1024*1024+1]) {
+  assert.throws(()=>encryptEnigmAttachment(Uint8Array.of(1),random,{maximumPlaintextBytes}),/size limit/);
+ }
+ const oversized=encryptEnigmAttachment(Uint8Array.of(1,2,3),entropy);
+ assert.throws(()=>decryptEnigmAttachment(oversized.encrypted,oversized.fileKey,undefined,{maximumPlaintextBytes:2}),/too large/);
+});

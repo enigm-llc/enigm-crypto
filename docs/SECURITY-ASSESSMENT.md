@@ -10,8 +10,8 @@ formal proof or guarantee of anonymity. No live production system was attacked o
 | Finding | Disposition | Remaining boundary |
 | --- | --- | --- |
 | Clear participant/account/device/session metadata in message SDK | Explicitly documented; existing wire format preserved | Blocks a claim that service operators cannot identify/link participants |
-| Valid historical witness signatures could bootstrap trust indefinitely | Freshness window added; default 24 hours, configurable | Previously witnessed identity continuity and globally latest-head discovery remain host policies |
-| Untrusted base64 decoded before object size limits | Bounded decoding added to SDK device, binding and message paths | Host must bound network parsing, low-level inputs, attachment files and total response sizes |
+| Valid historical witness signatures could bootstrap trust indefinitely | Freshness window added; default 24 hours, configurable | Required fresh witness mode rejects continuity and zero quorum; globally latest-head discovery still requires an independent authenticated head |
+| Untrusted base64 decoded before object size limits | Bounded decoding added to SDK device, binding and message paths | Attachment decoding now has explicit bounds; host must still bound downloads, network parsing and low-level inputs |
 | Delimiter-based session locator can alias identifier tuples | SDK rejects delimiter-bearing/oversized identifiers before deriving contexts | Historical unsupported identifiers need an explicit migration; no silent rewrite of ciphertext contexts |
 | SDK recovery allows historical content-key decryption and repeated reads | Documented as intentional recoverable-history behavior | Retained recovery/session compromise and delivery deduplication remain distinct from primitive ratchet security |
 | Version/tag mismatch and missing GitHub release repository context | Release metadata guard and explicit repository context added | Tag/main/environment protection and authorized maintainers must be configured externally |

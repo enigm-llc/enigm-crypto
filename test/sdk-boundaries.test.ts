@@ -105,3 +105,19 @@ test('stale witnesses preserve only explicit prior-identity continuity, not fres
  assert.equal(result.quorumMet,false);
  assert.equal(result.verified,0);
 });
+
+test('required fresh quorum rejects stale prior trust before checkpoint persistence', async () => {
+ const fixture=buildProof();const witness=witnessed(fixture);let now=1_800_000_000_000;
+ const {verifier,rows}=setup({witnesses:[witness],quorum:1,now:()=>now,maximumWitnessAgeSeconds:100});
+ await verifier.verifyIdentity({accountId:'local',...fixture});const before=JSON.stringify([...rows]);now+=101_000;
+ await assert.rejects(verifier.verifyIdentity({accountId:'local',...fixture,requireFreshWitnesses:true}),/WITNESS_QUORUM_UNAVAILABLE/);
+ assert.equal(JSON.stringify([...rows]),before);
+});
+
+test('required fresh quorum cannot be satisfied by a zero-witness configuration', async () => {
+ const {verifier,rows}=setup();
+ await assert.rejects(verifier.verifyIdentity({accountId:'local',...buildProof(),requireFreshWitnesses:true}),/WITNESS_QUORUM_UNAVAILABLE/);
+ assert.equal(rows.size,0);
+ const witness={name:'witness.test/v1',publicKey:'Zr5+Myx6RTMyvZ0Kf32wVfXF7xoGraZtmLOftoEMRzo='};
+ assert.throws(()=>setup({witnesses:Array.from({length:16},(_,i)=>({...witness,name:`witness-${i}`})),quorum:1}),/INVALID_WITNESS_CONFIGURATION/);
+});

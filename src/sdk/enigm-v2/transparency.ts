@@ -45,6 +45,7 @@ export const createEnigmTransparencyVerifier = (
   if (
     !Number.isSafeInteger(options.quorum) ||
     options.quorum < 0 ||
+    options.witnesses.length > 15 ||
     options.quorum > new Set(options.witnesses.map((w) => w.name)).size
   )
     throw new KeyTransparencyErrorEnigmV2("INVALID_WITNESS_CONFIGURATION");
@@ -190,9 +191,11 @@ export const createEnigmTransparencyVerifier = (
       !Number.isSafeInteger(proof.treeSize) ||
       proof.treeSize < proof.sequence ||
       proof.inclusionProof.length > MAX_MERKLE_PROOF_NODES ||
+      proof.signedCheckpoint.length > MAX_SIGNED_CHECKPOINT_BYTES ||
       utf8(proof.signedCheckpoint).length > MAX_SIGNED_CHECKPOINT_BYTES ||
+      proof.witnessCosignatures.length > 15 ||
       proof.witnessCosignatures.some(
-        (line) => utf8(line).length > MAX_WITNESS_SIGNATURE_BYTES
+        (line) => line.length > MAX_WITNESS_SIGNATURE_BYTES || utf8(line).length > MAX_WITNESS_SIGNATURE_BYTES
       )
     ) {
       throw new KeyTransparencyErrorEnigmV2("INVALID_LOG_POSITION");
@@ -387,6 +390,8 @@ export const createEnigmTransparencyVerifier = (
     expectedDeviceId: string;
     identityKeyId: string;
     proof: EnigmTransparencyProof | null | undefined;
+    /** Disallow witness-outage continuity for operations requiring current witness evidence. */
+    requireFreshWitnesses?: boolean;
   }): Promise<KeyTransparencyWitnessVerificationEnigmV2> => {
     if (!input.proof) throw new KeyTransparencyErrorEnigmV2("PROOF_REQUIRED");
     const proof = input.proof;
@@ -520,6 +525,8 @@ export const createEnigmTransparencyVerifier = (
       throw new KeyTransparencyErrorEnigmV2("INVALID_STATE_PROOF");
     }
 
+    if (input.requireFreshWitnesses && (options.quorum < 1 || !anchorLog.witnesses.quorumMet))
+      throw new KeyTransparencyErrorEnigmV2("WITNESS_QUORUM_UNAVAILABLE");
     await acceptCheckpoint(
       input.accountId,
       { version: 1, size: proof.treeSize, rootHash: proof.rootHash },
