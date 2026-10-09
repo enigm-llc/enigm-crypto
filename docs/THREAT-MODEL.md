@@ -38,3 +38,18 @@ account-scoped private state. UI and transport layers are not cryptographic trus
 - Persist ratchet advancement before confirming message delivery.
 - Scope storage keys by account and device; wipe only the selected account on logout.
 - Enforce authorization and deletion independently of ciphertext confidentiality.
+
+
+## SDK profile limits
+
+The message SDK exposes participant identifiers and stable routing/session metadata; service
+operators can correlate participants. Its retained recovery/session material permits historical
+reads and weakens historical forward secrecy. Delivery replay rejection belongs to the host even
+when ratchet-only primitives reject reused counters. Sender binding relies on the pinned log
+signer, whose authority knows the account/device mapping.
+
+Fresh witness quorum for new trust has a configurable age limit. Previously witnessed identity
+continuity during witness outages is an explicit availability tradeoff, not current revocation
+verification. A host needing a current status decision must obtain a recent authenticated head
+and require a fresh quorum. See [security assessment](SECURITY-ASSESSMENT.md) and
+[Privacy](PRIVACY.md) for remaining release and anonymity boundaries.

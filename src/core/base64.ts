@@ -16,7 +16,11 @@ export const encodeBase64 = (value: Uint8Array): string => {
   return output;
 };
 
-export const decodeBase64 = (value: string): Uint8Array => {
+export const decodeBase64 = (value: string, maximumBytes?: number): Uint8Array => {
+  if (maximumBytes !== undefined) {
+    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0) throw new Error("Invalid base64 size limit.");
+    if (value.length > 4 * Math.ceil(maximumBytes / 3)) throw new Error("Base64 value is too large.");
+  }
   if (value === "") return new Uint8Array();
   if (value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(value)) {
     throw new Error("Invalid base64 value.");
@@ -24,7 +28,9 @@ export const decodeBase64 = (value: string): Uint8Array => {
   let padding = 0;
   if (value.endsWith("==")) padding = 2;
   else if (value.endsWith("=")) padding = 1;
-  const output = new Uint8Array((value.length / 4) * 3 - padding);
+  const length = (value.length / 4) * 3 - padding;
+  if (maximumBytes !== undefined && length > maximumBytes) throw new Error("Base64 value is too large.");
+  const output = new Uint8Array(length);
   let outputOffset = 0;
   for (let offset = 0; offset < value.length; offset += 4) {
     const indexes = [0, 1, 2, 3].map((position) => {

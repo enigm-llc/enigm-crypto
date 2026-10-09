@@ -42,8 +42,8 @@ creation time, nonce, suite and ciphertext. The sender public identity, plaintex
 signature are encoded inside that ciphertext. Opening requires the recipient identity and private
 KEM bundle, validates the outer associated data, verifies both inner signatures and optionally
 binds the recovered sender identity to a caller-supplied expected identity. Decoders reject
-oversized fields, trailing bytes, invalid flags, future creation times and missing supplemental
-secrets when the sender selected that policy.
+oversized fields, trailing bytes and invalid flags. Opening additionally rejects future creation
+times and missing supplemental secrets when the sender selected that policy.
 
 This primitive hides sender identity from a ciphertext-only relay. It does not by itself hide the
 network source, recipient routing token, timing or size. A host protocol must provide anonymous
@@ -99,3 +99,22 @@ documented as a distinct security boundary.
 Signed and derived transcripts use unsigned big-endian fixed integers and length-prefixed byte
 strings. Domain labels, protocol version and suite are included. Wire encodings must preserve the
 canonical bytes exactly; unordered object serialization must never be signed directly.
+
+
+## Enigm V2 SDK profile
+
+The SDK retains message versions 2/3, attachment version 2 and stored messaging-state version 5.
+It uses ordinary authenticated envelopes for bootstrap/direct content keys; it does not use the
+sender-sealed primitive to conceal its clear packet participant identifiers. Receive attribution
+is bound to the account/device/identity verified during bootstrap and stored in `sessionSenders`.
+The [SDK guide](SDK.md) defines legacy migration and host receive serialization.
+
+Content ciphertext uses the fixed existing session/content/recovery context strings. Conversation,
+device and message identifiers must not contain their `:`/`|` separators. Canonical group member
+ordering uses UTF-16 code units, independent of locale. Changing these bytes requires a versioned
+protocol, rather than a formatting or runtime compatibility fix.
+
+Attachments encrypt UTF-8 canonical base64 of the original binary file using
+`enigm-crypto-v2-attachment`; decryption preserves historical whitespace normalization and returns
+raw bytes. Message recovery capsules permit historical reads under retained recovery/session keys.
+This SDK behavior is distinct from the forward secrecy/replay properties of the low-level ratchet.

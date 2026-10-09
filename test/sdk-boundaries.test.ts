@@ -78,3 +78,30 @@ test('trust capacity and failed checkpoint persistence reject acceptance',async(
  const failed=setup({store:{read:async()=>null,write:async()=>{throw new Error('storage unavailable');},delete:async()=>{},exclusive:async<T>(_id:string,action:()=>Promise<T>)=>action()}});
  await assert.rejects(failed.verifier.verifyIdentity({accountId:'local',...buildProof()}),/storage unavailable/);
 });
+
+test('historical witness signatures cannot bootstrap new trust beyond the freshness window', async () => {
+ const fixture = buildProof(); const witness = witnessed(fixture);
+ const { verifier, rows } = setup({witnesses:[witness],quorum:1,now:()=>1_800_000_000_000 + 10 * 365 * 86400 * 1000});
+ await assert.rejects(verifier.verifyIdentity({accountId:'local',...fixture}),/WITNESS_QUORUM_UNAVAILABLE/);
+ assert.equal(rows.size,0);
+});
+test('configured witness freshness includes its exact boundary and rejects older signatures', async () => {
+ const fixture = buildProof(); const witness = witnessed(fixture);
+ const configuration = {witnesses:[witness],quorum:1,maximumWitnessAgeSeconds:100};
+ await setup({...configuration,now:()=>1_800_000_100_000}).verifier.verifyIdentity({accountId:'local',...fixture});
+ await assert.rejects(setup({...configuration,now:()=>1_800_000_101_000}).verifier.verifyIdentity({accountId:'local',...fixture}),/WITNESS_QUORUM_UNAVAILABLE/);
+ for (const maximumWitnessAgeSeconds of [0,-1,Infinity,1.5]) {
+  assert.throws(()=>setup({...configuration,maximumWitnessAgeSeconds}),/INVALID_WITNESS_CONFIGURATION/);
+ }
+});
+
+test('stale witnesses preserve only explicit prior-identity continuity, not fresh quorum', async () => {
+ const fixture=buildProof(); const witness=witnessed(fixture);
+ let now=1_800_000_000_000;
+ const {verifier}=setup({witnesses:[witness],quorum:1,now:()=>now,maximumWitnessAgeSeconds:100});
+ assert.equal((await verifier.verifyIdentity({accountId:'local',...fixture})).quorumMet,true);
+ now+=101_000;
+ const result=await verifier.verifyIdentity({accountId:'local',...fixture});
+ assert.equal(result.quorumMet,false);
+ assert.equal(result.verified,0);
+});

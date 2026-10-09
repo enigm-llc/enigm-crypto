@@ -1,31 +1,53 @@
-# React Native / Hermes
+# React Native and Hermes
 
-Use compiled public npm imports, including `@enigm/crypto/sdk`. The React Native export
-condition resolves to bundled CommonJS. ESM and CommonJS also ship from the same TypeScript
-source. Metro can use the compiled entry when it does not support export conditions.
+Install the reviewed npm prerelease or release tarball, then import public entry points:
 
-UTF-8 uses internal routines with fatal invalid-input rejection. No TextEncoder, TextDecoder
-or Buffer polyfill is installed. Build-time tree shaking removes unused Noble FROST domain
-initialization that previously required TextEncoder during import. Direct development imports
-of source/Noble modules do not have this compiled-package guarantee.
+```ts
+import { utf8 } from '@enigm/crypto/core';
+import { createEnigmMessageClient } from '@enigm/crypto/sdk';
+```
 
-The host must supply OS-backed entropy and `crypto.getRandomValues` for curve scalar blinding;
-see ADAPTERS.md. Do not bypass cryptographic checks to accommodate a runtime.
+The `react-native` export condition resolves to bundled CommonJS. ESM and CommonJS are built
+from the same source. Metro versions without export-condition support can process the root
+compiled entry; verify the resolver behavior for your supported React Native versions.
 
-Library validation:
+## Runtime requirements
+
+The package does not require or install global `TextEncoder`, `TextDecoder` or `Buffer`.
+Its internal UTF-8 decoder rejects invalid input. Compiled dependency tree shaking removes
+unused eager initialization; direct imports of `src` or individual Noble modules do not have
+this compiled-entry guarantee.
+
+Provide an OS-backed `RandomSource` and install an OS-backed `crypto.getRandomValues` provider
+before invoking key generation/signing. Supplying only `RandomSource` does not satisfy curve
+scalar blinding. React Native does not supply that CSPRNG in every runtime. Choose and validate
+a native provider in the host application; do not use deterministic entropy or `Math.random`.
+The SDK intentionally leaves native provider selection and storage policy to the host.
+
+```ts
+// nativeRandomBytes is your reviewed native OS CSPRNG adapter.
+const randomSource = (length: number): Uint8Array => nativeRandomBytes(length);
+// Separately initialize the host's native crypto.getRandomValues provider.
+```
+
+Use [secure adapter contracts](ADAPTERS.md) for Keychain/Keystore-backed encrypted records,
+fresh private-key buffer ownership and complete receive-operation locks. Preserve existing
+state/labels through explicit migrations; never reset sessions to make an upgrade succeed.
+
+## Platform verification
+
+The repository's runtime checks test compiled ESM/CJS/RN imports and strict decoding. The
+additional Hermes harness was exercised with React Native 0.77's macOS Hermes VM:
 
 ```sh
+# Contributor commands from a source checkout, not an installed npm package:
 npm run test:runtime
 npm run test:package
 node scripts/verify-hermes-runtime.mjs /absolute/path/to/rn-app/node_modules
 ```
 
-The last command uses the existing React Native Babel tooling and RN 0.77 macOS Hermes VM.
-It does not modify the application. VM testing is distinct from device testing.
-
-Next integration stage: update the vendored copy with the application's
-`scripts/manage-enigm-crypto-vendor.mjs`, update its vendor lock and dependency lock,
-implement secure Keychain/device-key/network adapters, then migrate mobile imports to the
-public SDK. Preserve existing records and historical ciphertext. Remove temporary text
-polyfills and duplicate cryptographic code only after successful text and multimedia tests
-on iOS and Android devices. This source release does not perform those steps.
+This evidence does not cover every Hermes/Metro version or constitute physical iOS/Android
+acceptance. Verify cold startup, native entropy, secure persistence, delayed messages,
+history/recovery, account isolation, and image/audio/video/document behavior on each supported
+platform. Remove application compatibility shims only after all dependencies and device paths
+are verified. No native Swift/Kotlin bridge is shipped or required by this library itself.

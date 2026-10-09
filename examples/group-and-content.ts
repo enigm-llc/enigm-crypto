@@ -8,7 +8,7 @@ import {
   generateContentKey,
   rotateGroupEpoch,
   utf8,
-} from '../src/index.js';
+} from '@enigm/crypto';
 
 let epoch = createGroupEpoch(utf8('example-group-id'), ['device-a', 'device-b']);
 const expectedMetadata = utf8('{"name":"Example"}');

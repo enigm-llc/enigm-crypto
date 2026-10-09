@@ -10,3 +10,11 @@ test('canonical base64 works without Buffer and rejects alternate encodings', ()
   }
   for (const bad of ['Zg', 'Zh==', 'Zm9=', 'Zg==\n', '!!!!']) assert.throws(() => decodeBase64(bad));
 });
+
+test('bounded base64 rejects oversized decoded data before allocation and accepts the exact boundary', () => {
+  const encoded = encodeBase64(new Uint8Array(33));
+  assert.throws(() => decodeBase64(encoded, 32), /too large/);
+  assert.deepEqual(decodeBase64(encoded, 33), new Uint8Array(33));
+  assert.deepEqual(decodeBase64('', 0), new Uint8Array());
+  assert.throws(() => decodeBase64('AA==', -1), /limit/);
+});

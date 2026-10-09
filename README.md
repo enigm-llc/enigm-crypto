@@ -1,155 +1,158 @@
 # Enigm Crypto
 
-`@enigm/crypto` is a portable TypeScript library for hybrid classical and post-quantum
-cryptographic protocols. It contains no UI, network client, analytics, database or storage
-implementation. Applications control transport and persistence; this package provides canonical
-encodings, authenticated envelopes, identities, content encryption, sessions and group epochs.
+`@enigm/crypto` is an Apache-2.0 TypeScript library for hybrid classical and post-quantum
+cryptography, with a portable messaging SDK. It runs through public ESM, CommonJS and
+React Native entry points. It provides no built-in network transport, platform storage,
+UI, analytics or telemetry. Host-supplied adapters control persistence and network requests.
 
-## Status
+**Status:** `0.2.0-alpha.0` is a prerelease candidate. It has not completed an independent
+cryptographic audit and is not a FIPS 140-3 validated module. The message SDK encrypts content
+but exposes participant/routing metadata; it is **not a server-blind anonymous messaging
+protocol**. Read [Security](SECURITY.md), [Privacy](docs/PRIVACY.md) and the
+[security assessment](docs/SECURITY-ASSESSMENT.md) before integration.
 
-This package is pre-release security software. It has not completed an independent cryptographic
-audit and is not a FIPS 140-3 validated module. Review [SECURITY.md](SECURITY.md) and the
-[threat model](docs/THREAT-MODEL.md) before using it with sensitive data.
+## Installation
 
-## Package status
+After the first approved npm prerelease is available:
 
-`@enigm/crypto` is not published to the npm registry yet. Until trusted publishing is configured,
-consume reviewed source commits or the checksum- and provenance-backed tarballs attached to GitHub
-pre-releases. Do not publish a locally rebuilt tarball under this package name.
+```sh
+npm install @enigm/crypto@next
+```
 
-The package publishes ESM, CommonJS and React Native entry points from one TypeScript source.
-Node.js uses the runtime CSPRNG. Other runtimes must provide a cryptographically secure random
-source backed by the operating system.
+Before that release, install a reviewed release tarball after verifying its checksum and
+GitHub provenance against the intended repository and commit:
 
-UTF-8 encoding and strict decoding do not require `TextEncoder`, `TextDecoder` or `Buffer`.
-The compiled public entry points bundle their dependencies and remove unused eager initialization.
-They do not install global text polyfills. Curve scalar blinding still requires a secure
-`crypto.getRandomValues` implementation, including when a `RandomSource` is supplied.
-Use an OS-backed provider in React Native; never replace it with `Math.random`.
-See [React Native runtime validation](docs/REACT-NATIVE.md) for checks and integration guidance.
+```sh
+npm install ./enigm-crypto-0.2.0-alpha.0.tgz
+```
 
-## Cipher suite
-
-`ENIGM-PQ-V2-MLKEM768-X25519-MLDSA65-ED25519-AES256GCM-HKDFSHA512`
-
-- ML-KEM-768 (FIPS 203) and X25519 hybrid key establishment.
-- ML-DSA-65 (FIPS 204) and Ed25519 hybrid authentication.
-- HKDF-SHA-512 domain-separated key derivation.
-- AES-256-GCM authenticated encryption with caller-bound associated data.
-- Sender-sealed envelopes with sender identity inside recipient-only ciphertext.
-- Per-message symmetric chain state with bounded out-of-order delivery.
-- Explicit protocol and suite identifiers; unsupported values fail closed.
-- Optional supplemental secret input for an independently reviewed defense-in-depth provider.
-
-Security does not depend on the optional supplemental contribution. Both baseline KEM secrets and
-both baseline signatures are required.
+Node.js 20.19 or newer is supported. Browser and React Native runtimes must provide OS-backed
+entropy, including `crypto.getRandomValues` for curve scalar blinding even when an explicit
+`RandomSource` is supplied. See [React Native](docs/REACT-NATIVE.md). The compiled imports
+need no `TextEncoder`, `TextDecoder` or `Buffer` and install no global text polyfills.
+Noble dependencies are pinned and bundled in each compiled entry point; npm also installs
+the declared dependencies. TypeScript source is included for review, not as a supported deep import.
 
 ## Quick start
 
+This local example creates both endpoints. In an application, each endpoint keeps its own
+private keys, and recipient keys must be verified before encryption.
+
 ```ts
 import {
-  generateIdentity,
-  generateKemBundle,
-  open,
-  publicIdentity,
-  publicKemBundle,
-  seal,
-  utf8,
+  equal, generateIdentity, generateKemBundle, open, publicIdentity,
+  publicKemBundle, seal, utf8, wipe,
 } from '@enigm/crypto';
 
 const sender = generateIdentity();
 const recipient = generateIdentity();
-const recipientBundle = generateKemBundle(recipient, Date.now() + 60_000);
-const context = utf8('conversation:42|sender:device-a|recipient:device-b|message:1');
-
-const envelope = seal({
-  sender,
-  recipientIdentity: publicIdentity(recipient),
-  recipient: publicKemBundle(recipientBundle),
-  plaintext: utf8('hello'),
-  context,
-});
-
-const plaintext = open({
-  sender: publicIdentity(sender),
-  recipientIdentity: publicIdentity(recipient),
-  recipient: recipientBundle,
-  envelope,
-  context,
-});
+const bundle = generateKemBundle(recipient, Date.now() + 60_000);
+const context = utf8('example|conversation:42|sender:a|recipient:b|message:1');
+const original = utf8('hello');
+let plaintext: Uint8Array | undefined;
+try {
+  const envelope = seal({
+    sender, recipientIdentity: publicIdentity(recipient),
+    recipient: publicKemBundle(bundle), plaintext: original, context,
+  });
+  plaintext = open({
+    sender: publicIdentity(sender), recipientIdentity: publicIdentity(recipient),
+    recipient: bundle, envelope, context,
+  });
+  if (!equal(original, plaintext)) throw new Error('Round trip failed');
+} finally {
+  wipe(original, sender.mlDsaSecretKey, sender.ed25519SecretKey,
+    recipient.mlDsaSecretKey, recipient.ed25519SecretKey,
+    bundle.mlKemSecretKey, bundle.x25519SecretKey);
+  if (plaintext) wipe(plaintext);
+}
 ```
 
-See the executable [examples](examples) for envelopes, bidirectional sessions, group epoch
-rotation, large-content encryption, sealed senders and signed key-transparency checkpoints.
-The public-log integration contract is documented in
-[Key transparency](docs/KEY-TRANSPARENCY.md).
+`wipe` overwrites caller-owned byte arrays on a best-effort basis; JavaScript strings,
+engine copies and garbage collection prevent a guaranteed memory-erasure claim.
 
-## Modular SDK
-
-The existing root API remains available. Additive npm subpaths expose:
+## Public modules
 
 | Import | Responsibility |
 | --- | --- |
-| `@enigm/crypto/core` | Bytes, strict UTF-8, base64 and shared types |
-| `@enigm/crypto/primitives` | Hybrid identities and KEM bundles |
-| `@enigm/crypto/protocols` | Envelopes, sessions, groups, payloads and transparency |
-| `@enigm/crypto/codecs` | Canonical wire codecs |
-| `@enigm/crypto/sdk` | Enigm message, device, session, attachment and transparency clients |
+| `@enigm/crypto` | Complete API, including existing low-level exports |
+| `@enigm/crypto/core` | Bytes, strict UTF-8, canonical base64 and shared types |
+| `@enigm/crypto/primitives` | Hybrid identities, signatures and KEM bundles |
+| `@enigm/crypto/protocols` | Envelopes, sessions, ratchets, group epochs, content and transparency |
+| `@enigm/crypto/codecs` | Canonical binary wire encodings |
+| `@enigm/crypto/sdk` | Message, device, session, attachment and transparency clients; adapter types |
 
-The SDK owns cryptographic policy. The host supplies secure storage, OS entropy, transport and
-configuration through explicit adapters. See [SDK usage](docs/SDK.md) and
-[adapter contracts](docs/ADAPTERS.md). Mobile integration is a separate follow-up.
+The suite is `ENIGM-PQ-V2-MLKEM768-X25519-MLDSA65-ED25519-AES256GCM-HKDFSHA512`:
+ML-KEM-768 and X25519 contribute to key establishment, both ML-DSA-65 and Ed25519 signatures
+are required, and HKDF-SHA-512 separates keys for AES-256-GCM. An optional supplemental
+secret never substitutes for either baseline key-establishment contribution or signature.
 
-## API map
+## Messaging SDK
 
-| Module | Responsibility |
-| --- | --- |
-| `identity` | Hybrid identity generation, fingerprints, signing and verification |
-| `kem` | Hybrid signed recipient key bundles |
-| `envelope` | Authenticated hybrid key or payload envelopes |
-| `sealed-sender` | Recipient-only sender identity and authenticated payload envelopes |
-| `session` | Directional session state, skipped keys and explicit rekeying |
-| `ratchet` | Low-level symmetric chain operations |
-| `group` | Group epoch creation, rotation and encrypted epoch payloads |
-| `payload` | AES-256-GCM content keys and ciphertexts |
-| `codec` | Canonical binary wire encoding and strict decoding |
-| `transparency` | Hash-chained key events, hybrid checkpoints and gossip observations |
-| `transparency-log` | Incremental RFC 6962 trees, proofs and C2SP signed checkpoints |
-| `transparency-state` | Authenticated current identity state and membership proofs |
+The SDK constructs per-device message key packets, verifies authenticated sender attribution,
+persists session state, and handles binary attachments. It preserves existing Enigm V2 wire
+formats. The host supplies secure storage, device-key lifecycle, native entropy, authenticated
+transport and trusted transparency configuration through [explicit adapters](docs/ADAPTERS.md).
 
-## Integration requirements
+See [SDK integration](docs/SDK.md) for factory inputs, message flow, limits, recovery and
+migration. The executable [message example](examples/messages.ts) demonstrates a new and
+an established session with simulated, out-of-band trust. It does not replace complete
+recipient transparency verification.
 
-- Scope every private identity, KEM bundle and session state to one local account and device.
-- Store private material with platform secure storage and clear plaintext buffers after use.
-- Publish only public identities, signed public KEM bundles and ciphertexts.
-- Consume one-time bundles atomically and reject reuse.
-- Retain a consumed bundle's private key until the corresponding envelope is opened, and use the
-  authenticated envelope creation time for delayed-delivery validation.
-- Bind `context` to protocol version, conversation, sender device, recipient device, message ID and
-  content type.
-- Bind an opened sealed-sender identity to the expected account before accepting its payload.
-- Persist session advancement before acknowledging delivery and reject replayed counters.
-- Rotate a group epoch after every membership change. A newly added member must receive only the
-  new epoch secret.
-- Treat recovery of historical ciphertext as a separate protocol with an explicit security model.
+For files, send the returned file key inside an authenticated encrypted message:
 
-## Development
+```ts
+import { encryptEnigmAttachment, decryptEnigmAttachment } from '@enigm/crypto/sdk';
+// binaryFile and randomSource are supplied by the host.
+const { encrypted, fileKey } = encryptEnigmAttachment(binaryFile, randomSource);
+const recovered = decryptEnigmAttachment(encrypted, fileKey);
+```
+
+Images, audio, video and documents share this API. Attachments are buffered in memory and
+preserve UTF-8 base64 inside the encrypted payload; this is not a streaming file codec.
+
+## Security and integration boundaries
+
+- Verify public keys against account/device ownership and a complete witnessed transparency proof.
+- Keep private identities, prekeys, session and recovery state in account/device-scoped secure storage.
+- Serialize complete receive operations and atomically consume one-time prekeys after authenticated persistence.
+- Preserve private prekeys needed for delayed delivery and historical migration.
+- Bind associated data to unambiguous protocol, conversation, device, message and content identifiers.
+- Persist ratchet advancement before acknowledging delivery; deduplicate transport deliveries separately.
+- Rotate group epochs on membership changes; do not share prior secrets with new members.
+- SDK history recovery deliberately permits repeated history reads and weakens historical forward secrecy
+  to the security of retained recovery/session state.
+- Set response/file limits before parsing or allocating. Witness continuity is not proof of current revocation status.
+- Sender-sealed envelopes hide identity inside ciphertext; they do not hide network source, routing, timing or size.
+
+The [protocol specification](docs/PROTOCOL.md), [key transparency contract](docs/KEY-TRANSPARENCY.md)
+and [threat model](docs/THREAT-MODEL.md) explain these boundaries.
+
+## Examples and development
+
+From a source checkout:
 
 ```sh
-npm ci
+npm ci --ignore-scripts
 npm run check
 npm test
 npm run examples
-npm run benchmark
-npm run build
 npm run test:runtime
 npm run test:package
 npm run pack:verify
-npm run --silent sbom > enigm-crypto.cdx.json
-npm pack --dry-run
+npm run release:check
 ```
 
-Protocol-visible changes must update the suite or version, tests and
-[protocol specification](docs/PROTOCOL.md) in the same pull request. Contributions follow
-[CONTRIBUTING.md](CONTRIBUTING.md); vulnerabilities use the private process in
-[SECURITY.md](SECURITY.md).
+To run a shipped TypeScript example in a separate Node.js project, install the reviewed
+package/tarball and a TypeScript runner:
+
+```sh
+npm install --save-dev tsx
+npx tsx node_modules/@enigm/crypto/examples/envelope.ts
+npx tsx node_modules/@enigm/crypto/examples/messages.ts
+```
+
+Examples use generated demonstration data; the volatile adapter is unsuitable for production.
+[Contributing](CONTRIBUTING.md), [release preparation](docs/RELEASE.md) and the
+[changelog](CHANGELOG.md) describe maintenance. Report suspected vulnerabilities privately
+through [SECURITY.md](SECURITY.md).

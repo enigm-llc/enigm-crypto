@@ -15,8 +15,11 @@ export const verifyEnigmIdentityBinding = (
   logPublicKey: string
 ): void => {
   try {
-    const signature = decodeBase64(input.bindingSignature);
-    const publicKey = decodeBase64(logPublicKey);
+    const signature = decodeBase64(input.bindingSignature, 64);
+    const publicKey = decodeBase64(logPublicKey, 32);
+    for (const field of [input.identityKeyId, input.accountCommitment, input.deviceCommitment]) {
+      if (decodeBase64(field, 32).length !== 32) throw new Error("Invalid binding field.");
+    }
     if (
       !input.expectedAccountId ||
       !input.expectedDeviceId ||

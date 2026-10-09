@@ -39,10 +39,10 @@ export const createEnigmDeviceClient = (options: {
     }
   };
   const checkIdentity = (encoded: string, expected?: string) => {
-    const identity = decodePublicIdentity(decodeBase64(encoded));
+    const identity = decodePublicIdentity(decodeBase64(encoded, 32 * 1024));
     if (
       expected !== undefined &&
-      !equal(identity.keyId, decodeBase64(expected))
+      !equal(identity.keyId, decodeBase64(expected, 32))
     )
       throw new Error("EnigmV2 identity key identifier mismatch.");
     return identity;
@@ -56,7 +56,7 @@ export const createEnigmDeviceClient = (options: {
     supplementalSecret?: Uint8Array
   ) =>
     withKeys(accountId, (state) => {
-      const envelope = decodeEnvelope(decodeBase64(encoded));
+      const envelope = decodeEnvelope(decodeBase64(encoded, 2 * 1024 * 1024));
       const item = state.bundles.find((item) =>
         equal(item.bundle.keyId, envelope.recipientKemKeyId)
       );
@@ -104,7 +104,7 @@ export const createEnigmDeviceClient = (options: {
             seal({
               sender: state.identity,
               recipientIdentity: checkIdentity(identity, expectedIdentityKeyId),
-              recipient: decodePublicKemBundle(decodeBase64(bundle)),
+              recipient: decodePublicKemBundle(decodeBase64(bundle, 32 * 1024)),
               plaintext,
               context,
               randomSource: options.randomSource,

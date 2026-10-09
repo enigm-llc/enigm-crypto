@@ -17,7 +17,7 @@ The same lock must not be recursively acquired. Namespace different SDK record k
 adapter as needed. Session records pass the raw local account ID to read/write; the host adapter maps it
 to its secure platform label. Transparency uses
 `checkpoint:` and `trust:` labels. A mobile migration must explicitly map existing Keychain
-labels and import existing serialized state; this release does not perform that migration.
+labels and import existing serialized state. Platform-specific migrations are host responsibilities.
 
 Use encrypted platform storage with appropriate device/account access controls. Never log
 serialized state, recovery keys or private keys. Errors must reject, rather than report a
@@ -43,3 +43,37 @@ The host network adapter must bound response size before parsing, enforce a time
 authenticate transport and honor cancellation. The library accepts an already-parsed value
 and cannot impose network response limits. No URL, authorization token or backend client is
 embedded in the SDK. Applications must verify the full identity proof before establishing trust.
+
+## Input limits and identifiers
+
+The message SDK defaults to 1 MiB of plaintext (`maximumMessageBytes`, configurable from
+1 byte through 32 MiB), a 16-byte AEAD tag and at most 100 recipient packets. Device SDK public
+objects are limited to 32 KiB decoded and conventional envelope frames to 2 MiB decoded.
+Encoded sizes are checked before base64 allocation. A fixed-size content-key packet uses
+32-byte chain identifiers, 12-byte nonces and at most 48 ciphertext bytes. The lower-level
+base64 decoder accepts an optional decoded-byte limit; callers of low-level APIs remain
+responsible for choosing appropriate bounds.
+
+SDK conversation, device and message identifiers must be nonempty, at most 256 UTF-16 code
+units, and contain neither `:` nor `|`. Existing V2 locators/contexts concatenate identifiers
+with these delimiters; allowing them in identifiers creates ambiguous tuples. Use canonical
+opaque identifiers and preserve their exact bytes. Low-level protocols accept arbitrary byte
+contexts, so callers must frame their own identifiers unambiguously.
+
+Attachments are fully buffered and have base64 expansion. The host must cap files and responses
+before loading/parsing; avoid converting an unbounded remote object into a JavaScript string.
+The SDK cannot prevent allocations already performed by the network adapter or JSON parser.
+
+## Witness freshness and continuity
+
+Set `maximumWitnessAgeSeconds` to a positive integer matching the deployment's checkpoint
+refresh/revocation policy; the default is 86,400 seconds. Only signatures within that window
+count toward the configured witness quorum for new identity trust. Clock accuracy matters;
+low-level verification also rejects timestamps more than 300 seconds in the future.
+
+Previously witnessed identities may continue without a current quorum to preserve the explicit
+witness-outage behavior. A result with `quorumMet: false` is continuity, not a fresh revocation
+check. Require `quorumMet: true` and an authenticated recent head when an operation requires
+current status. Reject a zero quorum for production policy unless an independently reviewed
+alternative trust mechanism is deliberately used. Consistency/inclusion prove relationships
+between supplied checkpoints, not that a checkpoint is globally latest.

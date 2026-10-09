@@ -36,6 +36,9 @@ export type KeyTransparencyWitnessVerificationEnigmV2 = {
 export const createEnigmTransparencyVerifier = (
   options: EnigmTransparencyOptions
 ) => {
+  const maximumWitnessAgeSeconds = options.maximumWitnessAgeSeconds ?? 86_400;
+  if (!Number.isSafeInteger(maximumWitnessAgeSeconds) || maximumWitnessAgeSeconds < 1)
+    throw new KeyTransparencyErrorEnigmV2("INVALID_WITNESS_CONFIGURATION");
   const hash = (value: string) => bytesToHex(sha256(utf8(value)));
   const storeValue = (value: string, label: string) =>
     options.store.write(label, value);
@@ -151,7 +154,7 @@ export const createEnigmTransparencyVerifier = (
         },
         nowSeconds
       );
-      if (timestamp !== null) {
+      if (timestamp !== null && nowSeconds - timestamp <= maximumWitnessAgeSeconds) {
         seen.add(witness.name);
         accepted += 1;
       }

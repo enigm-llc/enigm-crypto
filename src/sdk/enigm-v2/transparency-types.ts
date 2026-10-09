@@ -46,5 +46,7 @@ export type EnigmTransparencyOptions = {
   witnesses: readonly { name: string; publicKey: string }[];
   quorum: number;
   now?: () => number;
+  /** Fresh quorum for new identities; default 24 hours. Continuity is not a freshness guarantee. */
+  maximumWitnessAgeSeconds?: number;
   fetchConsistencyProof: (from: number, to: number) => Promise<unknown>;
 };

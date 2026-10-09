@@ -66,9 +66,18 @@ export const createEnigmMessageClient = (options: {
   device: ReturnType<typeof createEnigmDeviceClient>;
   sessions: ReturnType<typeof createEnigmSessionClient>;
   logPublicKey: string;
+  /** Maximum message plaintext bytes, default 1 MiB; attachments have a separate API. */
+  maximumMessageBytes?: number;
 }) => {
+  const maximumMessageBytes = options.maximumMessageBytes ?? 1024 * 1024;
+  if (!Number.isSafeInteger(maximumMessageBytes) || maximumMessageBytes < 1 || maximumMessageBytes > 32 * 1024 * 1024)
+    throw new Error("Invalid EnigmV2 message size limit.");
   const b64 = encodeBase64;
-  const bytes = decodeBase64;
+  const bytes = (value: string, limit = maximumMessageBytes + 16) => decodeBase64(value, limit);
+  const validateIdentifier = (value: string): void => {
+    if (typeof value !== "string" || !value || value.length > 256 || /[:|]/u.test(value))
+      throw new Error("Invalid EnigmV2 protocol identifier.");
+  };
   const randomSource = options.randomSource;
   const digest = (value: string): string =>
     bytesToHex(sha256(utf8Bytes(value)));
@@ -77,26 +86,32 @@ export const createEnigmMessageClient = (options: {
     conversationId: string,
     senderDeviceId: string,
     recipientDeviceId: string
-  ): string =>
-    digest(`v2:${conversationId}:${senderDeviceId}:${recipientDeviceId}`);
+  ): string => {
+    [conversationId, senderDeviceId, recipientDeviceId].forEach(validateIdentifier);
+    return digest(`v2:${conversationId}:${senderDeviceId}:${recipientDeviceId}`);
+  };
 
   const sessionContext = (
     conversationId: string,
     senderDeviceId: string,
     recipientDeviceId: string
-  ): Uint8Array =>
-    utf8Bytes(
+  ): Uint8Array => {
+    [conversationId, senderDeviceId, recipientDeviceId].forEach(validateIdentifier);
+    return utf8Bytes(
       `enigm-crypto-v2-session|conversation:${conversationId}|sender:${senderDeviceId}|recipient:${recipientDeviceId}`
     );
+  };
 
   const contentContext = (
     conversationId: string,
     messageId: string,
     senderDeviceId: string
-  ): Uint8Array =>
-    utf8Bytes(
+  ): Uint8Array => {
+    [conversationId, messageId, senderDeviceId].forEach(validateIdentifier);
+    return utf8Bytes(
       `enigm-crypto-v2-content|conversation:${conversationId}|message:${messageId}|sender:${senderDeviceId}`
     );
+  };
 
   const recoveryContext = (
     conversationId: string,
@@ -192,6 +207,7 @@ export const createEnigmMessageClient = (options: {
     plaintext: Uint8Array;
     targets: readonly MessageDeviceTargetEnigmV2[];
   }): Promise<EncryptedMessageEnigmV2> => {
+    if (input.plaintext.length > maximumMessageBytes) throw new Error("EnigmV2 message is too large.");
     if (input.targets.length < 1 || input.targets.length > 100) {
       throw new Error("Invalid EnigmV2 message device target count.");
     }
@@ -502,6 +518,10 @@ export const createEnigmMessageClient = (options: {
   const selectMessagePacket = async (input: DecryptMessageInputEnigmV2): Promise<{
     packet: MessageKeyPacketEnigmV2; context: Uint8Array;
   }> => {
+    if (!Array.isArray(input.encrypted.keyPackets) || input.encrypted.keyPackets.length < 1 || input.encrypted.keyPackets.length > 100)
+      throw new Error("Invalid EnigmV2 message device target count.");
+    bytes(input.encrypted.ciphertext);
+    bytes(input.encrypted.nonce, 12);
     if (input.encrypted.version !== 2 && input.encrypted.version !== 3) {
       throw new Error("Unsupported encrypted message version.");
     }
@@ -521,6 +541,13 @@ export const createEnigmMessageClient = (options: {
       throw new Error(
         "The EnigmV2 recovery content-key envelope is unavailable."
       );
+    }
+    bytes(packet.recoveryContentKey.nonce, 12);
+    bytes(packet.recoveryContentKey.ciphertext, 48);
+    if (packet.wrappedContentKey) {
+      bytes(packet.wrappedContentKey.chainId, 32);
+      bytes(packet.wrappedContentKey.nonce, 12);
+      bytes(packet.wrappedContentKey.ciphertext, 48);
     }
     const context = sessionContext(
       input.conversationId,

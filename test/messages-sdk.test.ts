@@ -278,3 +278,33 @@ test('receive transaction rechecks attribution after concurrent state replacemen
  };
  await assert.rejects(f.client.decryptMessage({...receive,messageId:'two',encrypted}),/attribution/);
 });
+
+test('message SDK bounds untrusted packet counts and ciphertext before state access', async () => {
+ const f=setup();
+ const input={accountId:'bob',conversationId:'c',messageId:'one',currentDeviceId:'bob-device',encrypted:{version:3 as const,nonce:'',ciphertext:'',keyPackets:[]}};
+ await assert.rejects(f.client.decryptMessage(input),/target count/);
+ await assert.rejects(f.client.decryptMessage({...input,encrypted:{...input.encrypted,keyPackets:Array(101).fill({recipientDeviceId:'bob-device'})}}),/target count/);
+ await assert.rejects(f.client.decryptMessage({...input,encrypted:{...input.encrypted,nonce:encodeBase64(new Uint8Array(12)),ciphertext:'A'.repeat(4*Math.ceil((1024*1024+20)/3)),keyPackets:[{recipientDeviceId:'bob-device'} as never]}}),/too large/);
+ assert.equal(f.store.rows.size,0);
+});
+test('delimiter-bearing SDK identifiers cannot alias the deployed session locator', () => {
+ const f=setup();
+ assert.throws(()=>f.client.needsMessageSession('alice','a:b','c','d'),/identifier/);
+ assert.throws(()=>f.client.needsMessageSession('alice','a','b:c','d'),/identifier/);
+ assert.throws(()=>f.client.needsMessageSession('alice','a','b|c','d'),/identifier/);
+});
+
+test('selected content-key fields are bounded and message limits accept the exact configured boundary', async () => {
+ const f=setup();
+ const valid=await f.client.encryptMessage({accountId:'alice',conversationId:'c',messageId:'one',senderDeviceId:'alice-device',senderBinding:f.senderBinding,plaintext:Uint8Array.of(1),targets:[{userId:'bob',deviceId:'bob-device',encodedIdentity:await f.device.publicIdentityEncoded('bob'),encodedBundle:f.bobBundle,identityKeyId:encodeBase64(f.bob.keyId)}]});
+ const before=JSON.stringify([...f.store.rows]);
+ for (const target of ['recoveryContentKey','wrappedContentKey'] as const) {
+  const encrypted=structuredClone(valid); encrypted.keyPackets[0]![target]!.ciphertext=encodeBase64(new Uint8Array(49));
+  await assert.rejects(f.client.decryptMessage({accountId:'bob',conversationId:'c',messageId:'one',currentDeviceId:'bob-device',expectedSenderUserId:'alice',encrypted}),/too large/);
+  assert.equal(JSON.stringify([...f.store.rows]),before);
+ }
+ const client=createEnigmMessageClient({device:f.device,sessions:f.sessions,randomSource:random,logPublicKey:encodeBase64(ed25519.getPublicKey(new Uint8Array(32).fill(11))),maximumMessageBytes:1});
+ assert.deepEqual(await client.decryptMessage({accountId:'bob',conversationId:'c',messageId:'one',currentDeviceId:'bob-device',expectedSenderUserId:'alice',encrypted:valid}),Uint8Array.of(1));
+ await assert.rejects(client.encryptMessage({accountId:'alice',conversationId:'c',messageId:'two',senderDeviceId:'alice-device',senderBinding:f.senderBinding,plaintext:Uint8Array.of(1,2),targets:[]}),/too large/);
+ for(const maximumMessageBytes of [0,-1,Infinity,1.5,32*1024*1024+1]) assert.throws(()=>createEnigmMessageClient({device:f.device,sessions:f.sessions,randomSource:random,logPublicKey:'',maximumMessageBytes}),/size limit/);
+});

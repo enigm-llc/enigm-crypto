@@ -25,6 +25,8 @@ jobs:
         with:
           node-version: 20.19.0
           cache: npm
+      - name: Bind tag to package version
+        run: node scripts/verify-release.mjs --tag "$GITHUB_REF_NAME"
       - run: npm ci --ignore-scripts
       - run: npm audit --audit-level=high
       - run: npm audit signatures
@@ -34,12 +36,14 @@ jobs:
       - run: npm run benchmark
       - run: npm run test:runtime
       - run: npm run test:package
+      - run: npm run release:check
       - run: npm run pack:verify
       - run: |
           mkdir release
           npm pack --ignore-scripts --pack-destination release
           npm run --silent sbom > release/enigm-crypto.cdx.json
-          sha256sum release/* > release/SHA256SUMS
+          cd release
+          sha256sum *.tgz enigm-crypto.cdx.json > SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: enigm-crypto-release
@@ -84,3 +88,4 @@ jobs:
       - run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes --prerelease
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

@@ -1,6 +1,6 @@
 import { randomFillSync } from 'node:crypto';
-import { utf8, decodeUtf8, equal, wipe } from '../src/core/index.js';
-import { encryptEnigmAttachment, decryptEnigmAttachment } from '../src/sdk/index.js';
+import { utf8, decodeUtf8, equal, wipe } from '@enigm/crypto/core';
+import { encryptEnigmAttachment, decryptEnigmAttachment } from '@enigm/crypto/sdk';
 
 const randomBytes = (length: number): Uint8Array => randomFillSync(new Uint8Array(length));
 
@@ -13,20 +13,10 @@ if (!equal(original, recovered)) throw new Error('Attachment round trip failed')
 console.log(decodeUtf8(recovered));
 wipe(original); wipe(recovered);
 
-import { createEnigmSessionClient, type SecureStateStore } from '../src/sdk/index.js';
-// Volatile example storage only. Production must use encrypted platform storage.
-const rows = new Map<string, string>();
-const queues = new Map<string, Promise<unknown>>();
-const store: SecureStateStore = {
-  read: id => Promise.resolve(rows.get(id) ?? null),
-  write: (id, value) => { rows.set(id, value); return Promise.resolve(); },
-  delete: id => { rows.delete(id); return Promise.resolve(); },
-  exclusive: <T>(id: string, action: () => Promise<T>): Promise<T> => {
-    const operation = (queues.get(id) ?? Promise.resolve()).catch(() => {}).then(action);
-    queues.set(id, operation);
-    return operation;
-  },
-};
+import { createEnigmSessionClient } from '@enigm/crypto/sdk';
+import { createDemoStore } from './demo-storage.js';
+// Demonstration only; production requires encrypted platform storage.
+const store = createDemoStore();
 const sessions = createEnigmSessionClient({ store, randomSource: randomBytes });
 const root = randomBytes(32);
 const context = utf8('sdk-example:conversation:1|alice-device|bob-device');

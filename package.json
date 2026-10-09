@@ -75,19 +75,23 @@
     "docs/SDK.md",
     "docs/ADAPTERS.md",
     "docs/RELEASE.md",
-    "THIRD-PARTY-LICENSES.txt"
+    "THIRD-PARTY-LICENSES.txt",
+    "CHANGELOG.md",
+    "docs/PRIVACY.md",
+    "docs/SECURITY-ASSESSMENT.md"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test test/*.test.ts",
+    "test": "node --import tsx --test test/*.test.ts",
     "test:runtime": "npm run build && node scripts/verify-text-runtime.mjs",
-    "benchmark": "tsx test/benchmark.ts",
-    "examples": "tsx examples/envelope.ts && tsx examples/session.ts && tsx examples/group-and-content.ts && tsx examples/key-transparency.ts && tsx examples/sealed-sender.ts && tsx examples/sdk.ts",
+    "benchmark": "node --import tsx test/benchmark.ts",
+    "examples": "npm run build && node --import tsx examples/envelope.ts && node --import tsx examples/session.ts && node --import tsx examples/group-and-content.ts && node --import tsx examples/key-transparency.ts && node --import tsx examples/sealed-sender.ts && node --import tsx examples/sdk.ts && node --import tsx examples/messages.ts",
     "pack:verify": "npm run build && node scripts/verify-reproducible-pack.mjs",
     "sbom": "npm sbom --package-lock-only --sbom-format cyclonedx --sbom-type library",
     "prepack": "npm run build",
-    "test:package": "npm run build && node scripts/verify-package-consumers.mjs"
+    "test:package": "npm run build && node scripts/verify-package-consumers.mjs",
+    "release:check": "node scripts/verify-release.mjs && npm run build && node scripts/verify-public-package.mjs"
   },
   "engines": {
     "node": ">=20.19.0"
@@ -107,7 +111,8 @@
   "license": "Apache-2.0",
   "publishConfig": {
     "access": "public",
-    "tag": "next"
+    "tag": "next",
+    "registry": "https://registry.npmjs.org"
   },
   "repository": {
     "type": "git",

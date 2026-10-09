@@ -2,9 +2,10 @@ import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const npmCli = process.env.npm_execpath;
 if (!npmCli || !isAbsolute(npmCli)) {
   throw new Error('Run reproducible package verification through npm.');
@@ -31,7 +32,13 @@ try {
     import('node:fs/promises').then(({ mkdir }) => mkdir(first)),
     import('node:fs/promises').then(({ mkdir }) => mkdir(second)),
   ]);
+  const rebuild = () => {
+    const result = spawnSync(process.execPath, ['scripts/build.mjs'], { cwd: root, encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(result.stderr || 'Clean build failed.');
+  };
+  rebuild();
   pack(first);
+  rebuild();
   pack(second);
   const [firstFiles, secondFiles] = await Promise.all([readdir(first), readdir(second)]);
   if (firstFiles.length !== 1 || secondFiles.length !== 1 || firstFiles[0] !== secondFiles[0]) {

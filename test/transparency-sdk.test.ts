@@ -128,3 +128,15 @@ test("transparency rejects altered identity state, anchor and signed fields with
     assert.equal(rows.size, 0);
   }
 });
+
+test('identity binding rejects even signed noncanonical fixed-size commitment fields', () => {
+ const secret=new Uint8Array(32).fill(11);
+ const logPublicKey=encodeBase64(ed25519.getPublicKey(secret));
+ const verifier=createEnigmTransparencyVerifier({store:{read:()=>Promise.resolve(null),write:()=>Promise.resolve(),delete:()=>Promise.resolve(),exclusive:(_id,action)=>action()},logPublicKey,origin:'keys.test/v1',witnesses:[],quorum:0,fetchConsistencyProof:()=>Promise.resolve(null)});
+ const row={expectedAccountId:'alice',expectedDeviceId:'alice-device',identityKeyId:encodeBase64(new Uint8Array(32)),accountCommitment:encodeBase64(new Uint8Array(32)),deviceCommitment:encodeBase64(new Uint8Array(32))};
+ for(const field of ['identityKeyId','accountCommitment','deviceCommitment'] as const) {
+  const malformed={...row,[field]:encodeBase64(new Uint8Array(33))};
+  const bindingSignature=encodeBase64(ed25519.sign(utf8(JSON.stringify(['enigm-key-transparency-binding-v2',malformed.expectedAccountId,malformed.expectedDeviceId,malformed.identityKeyId,malformed.accountCommitment,malformed.deviceCommitment])),secret));
+  assert.throws(()=>verifier.verifyIdentityBinding({...malformed,bindingSignature}),/IDENTITY_BINDING_MISMATCH/);
+ }
+});
