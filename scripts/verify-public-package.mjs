@@ -21,24 +21,24 @@ for (const required of ['README.md', 'LICENSE', 'NOTICE', 'SECURITY.md', 'CHANGE
 }
 const internalLanguage = /\b(?:Codex|ChatGPT|OpenAI|superpowers|agentic|SKILL\.md)\b|\/Users\/|\/Desktop\/projects\//iu;
 const documents = files.filter(file => file.endsWith('.md'));
-for (const file of documents) {
+await Promise.all(documents.map(async file => {
   const text = await readFile(join(root, file), 'utf8');
   assert(!internalLanguage.test(text), `Internal content in public documentation: ${file}`);
-  for (const match of text.matchAll(/\[[^\]]+\]\(([^\s)]+)(?:\s+"[^"]*")?\)/gu)) {
+  for (const match of text.matchAll(/\[[^[\]]+\]\(([^()\s]+)(?:\s+"[^"]*")?\)/gu)) {
     const link = match[1].split('#')[0];
     if (!link || /^[a-z]+:/iu.test(link)) continue;
     const target = join(dirname(file), link).replaceAll('\\', '/');
     assert(files.includes(target) || files.some(item => item.startsWith(`${target}/`)), `Broken public link in ${file}: ${link}`);
   }
-}
-for (const file of await readdir(join(root, 'examples'))) {
-  if (!file.endsWith('.ts')) continue;
+}));
+const exampleFiles = (await readdir(join(root, 'examples'))).filter(file => file.endsWith('.ts'));
+await Promise.all(exampleFiles.map(async file => {
   const text = await readFile(join(root, 'examples', file), 'utf8');
   assert(!/from\s+['"]\.\.\/src\//u.test(text), `Private source import in example: ${file}`);
-}
+}));
 const notices = await readFile(join(root, 'THIRD-PARTY-LICENSES.txt'), 'utf8');
-for (const [dependency, version] of Object.entries(manifest.dependencies)) {
+await Promise.all(Object.entries(manifest.dependencies).map(async ([dependency, version]) => {
   const license = await readFile(join(root, 'node_modules', dependency, 'LICENSE'), 'utf8');
   assert(notices.includes(`${dependency} ${version}`) && notices.includes(license.trim()), `Missing bundled license: ${dependency}`);
-}
+}));
 console.log(`Public package verified: ${files.length} allowlisted files, local links, consumer examples and bundled licenses.`);

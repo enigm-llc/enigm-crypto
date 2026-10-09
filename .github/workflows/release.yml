@@ -43,7 +43,7 @@ jobs:
           npm pack --ignore-scripts --pack-destination release
           npm run --silent sbom > release/enigm-crypto.cdx.json
           cd release
-          sha256sum *.tgz enigm-crypto.cdx.json > SHA256SUMS
+          sha256sum ./*.tgz ./enigm-crypto.cdx.json > SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: enigm-crypto-release

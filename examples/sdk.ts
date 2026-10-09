@@ -1,6 +1,6 @@
 import { randomFillSync } from 'node:crypto';
 import { utf8, decodeUtf8, equal, wipe } from '@enigm/crypto/core';
-import { encryptEnigmAttachment, decryptEnigmAttachment } from '@enigm/crypto/sdk';
+import { encryptEnigmAttachment, decryptEnigmAttachment, createEnigmSessionClient } from '@enigm/crypto/sdk';
 
 const randomBytes = (length: number): Uint8Array => randomFillSync(new Uint8Array(length));
 
@@ -13,7 +13,6 @@ if (!equal(original, recovered)) throw new Error('Attachment round trip failed')
 console.log(decodeUtf8(recovered));
 wipe(original); wipe(recovered);
 
-import { createEnigmSessionClient } from '@enigm/crypto/sdk';
 import { createDemoStore } from './demo-storage.js';
 // Demonstration only; production requires encrypted platform storage.
 const store = createDemoStore();

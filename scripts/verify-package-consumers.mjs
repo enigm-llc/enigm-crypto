@@ -53,24 +53,23 @@ try {
  });
  const consumerPackage = join(consumer, 'node_modules/@enigm/crypto');
  const manifest = JSON.parse(await readFile(join(consumerPackage, 'package.json'), 'utf8'));
- for (const [name, version] of Object.entries(manifest.dependencies ?? {})) {
+ await Promise.all(Object.entries(manifest.dependencies ?? {}).map(async ([name, version]) => {
   const dependency = JSON.parse(await readFile(join(consumer, 'node_modules', name, 'package.json'), 'utf8'));
   assert.equal(dependency.version, version, `Installed dependency version differs: ${name}`);
- }
+ }));
  const exampleNames = (await readdir(join(consumerPackage, 'examples'))).filter(name => name.endsWith('.ts')).sort();
  const entryNames = exampleNames.filter(name => name !== 'demo-storage.ts');
  assert(exampleNames.length > 0, 'No shipped examples');
  const publicExamples = join(consumer, 'examples');
  await mkdir(publicExamples);
- const publicExamplePaths = [];
- for (const name of exampleNames) {
+ const publicExamplePaths = await Promise.all(exampleNames.map(async name => {
   // Copy without rewriting so public imports and local example helpers are checked exactly as shipped.
   const source = await readFile(join(consumerPackage, 'examples', name), 'utf8');
   assert(!/['"]\.\.\/src\//.test(source), `Development-source import in shipped example ${name}`);
   const examplePath = join(publicExamples, name);
   await writeFile(examplePath, source);
-  publicExamplePaths.push(examplePath);
- }
+  return examplePath;
+ }));
  for (const name of entryNames) execFileSync(process.execPath, ['--import', tsxLoader, join(publicExamples, name)], { cwd: consumer, stdio: 'inherit' });
  execFileSync(process.execPath, [resolve('node_modules/typescript/bin/tsc'), '--noEmit', '--strict', '--module', 'NodeNext', '--moduleResolution', 'NodeNext', '--target', 'ES2022', '--typeRoots', resolve('node_modules/@types'), ...publicExamplePaths], { cwd: consumer, stdio: 'inherit' });
  console.log(`Offline npm tarball installation passed with declared dependencies; ${entryNames.length} exact shipped example entrypoints executed and all example sources typechecked. The example runner and typechecker are repository development tools.`);

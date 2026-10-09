@@ -16,11 +16,14 @@ export const encodeBase64 = (value: Uint8Array): string => {
   return output;
 };
 
+const checkBase64Size = (encodedLength: number, maximumBytes?: number): void => {
+  if (maximumBytes === undefined) return;
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0) throw new Error("Invalid base64 size limit.");
+  if (encodedLength > 4 * Math.ceil(maximumBytes / 3)) throw new Error("Base64 value is too large.");
+};
+
 export const decodeBase64 = (value: string, maximumBytes?: number): Uint8Array => {
-  if (maximumBytes !== undefined) {
-    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0) throw new Error("Invalid base64 size limit.");
-    if (value.length > 4 * Math.ceil(maximumBytes / 3)) throw new Error("Base64 value is too large.");
-  }
+  checkBase64Size(value.length, maximumBytes);
   if (value === "") return new Uint8Array();
   if (value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(value)) {
     throw new Error("Invalid base64 value.");
