@@ -81,6 +81,4 @@ const runSdk = async (): Promise<void> => {
   check(globalThis.TextEncoder === undefined && globalThis.TextDecoder === undefined);
   (globalThis as unknown as {print:(value:string)=>void}).print('Hermes SDK: authenticated text bootstrap and established sessions passed.');
 };
-// Hermes cannot execute top-level await. The runner requires the final success
-// marker, so any rejection or incomplete async run fails the verification.
-void runSdk();
+await runSdk();

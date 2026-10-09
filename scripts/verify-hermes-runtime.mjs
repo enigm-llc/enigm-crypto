@@ -19,8 +19,12 @@ try {
   const bundle = join(temporary, 'bundle.js');
   const transformed = join(temporary, 'hermes.js');
   await build({ entryPoints: ['test/hermes-runtime.ts'], outfile: bundle,
-    bundle: true, platform: 'neutral', conditions: ['react-native'], target: 'es2020' });
-  const result = babel.transformSync(await readFile(bundle, 'utf8'), {
+    bundle: true, format: 'esm', platform: 'neutral', conditions: ['react-native'], target: 'es2022' });
+  // Hermes lacks module-level await. Wrap the dependency-free bundled module
+  // before Babel so its top-level awaits execute inside an awaited async body.
+  const runnable = '(async function main() {\n' + await readFile(bundle, 'utf8') +
+    '\n})().catch(error => { throw error; });';
+  const result = babel.transformSync(runnable, {
     presets: [[preset, { enableBabelRuntime: false }]], babelrc: false, configFile: false,
   });
   await writeFile(transformed, 'delete globalThis.TextEncoder;\ndelete globalThis.TextDecoder;\n' + result.code);

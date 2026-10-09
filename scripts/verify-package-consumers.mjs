@@ -16,7 +16,7 @@ const npmCli = (await Promise.all(npmCliCandidates.map(async path => {
 }))).find(Boolean);
 if (!npmCli) throw new Error('npm CLI not found; run this check through npm run test:package.');
 const tarExecutable = process.platform === 'win32'
- ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe')
+ ? join(process.env.SystemRoot ?? String.raw`C:\Windows`, 'System32', 'tar.exe')
  : '/usr/bin/tar';
 const temporary=await mkdtemp(join(tmpdir(),'enigm-consumer-'));
 try {
