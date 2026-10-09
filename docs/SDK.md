@@ -1,6 +1,6 @@
 # Portable Enigm SDK
 
-This pre-release adds an Enigm V2 integration profile to the existing low-level API.
+This SDK adds an Enigm V2 integration profile to the existing low-level API.
 It preserves message versions 2/3, attachment version 2, stored session version 5,
 identity-binding transcripts, session locators and protocol context strings.
 An npm package alone does not supply a messaging service: hosts still provide

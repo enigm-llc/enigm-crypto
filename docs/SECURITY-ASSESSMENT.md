@@ -1,4 +1,4 @@
-# Security assessment of the 0.2.0-alpha.0 candidate
+# Security assessment of the development candidate for the planned 1.0.0 release
 
 Assessment date: 2026-10-09. Scope: repository source, SDK state boundaries, documented protocol,
 locked dependencies, packed artifacts, public examples and release workflow. This is an engineering
@@ -65,5 +65,5 @@ metadata-observing service are outside the library's content-confidentiality gua
 
 Publication also depends on namespace ownership, maintainer 2FA, configured npm OIDC trust and
 protected GitHub environments/tags. Their existence cannot be inferred from source checks. A package
-can be a technically verified prerelease candidate without meeting the stronger production/anonymity
+can be a technically verified development candidate without meeting the stronger production/anonymity
 objective. Do not label this review as independent certification or the candidate as fully anonymous.

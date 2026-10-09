@@ -2,16 +2,21 @@
 
 ## Release policy
 
-`0.2.0-alpha.0` is a prerelease candidate distributed under Apache-2.0 with bundled Noble MIT
-notices. The public npm registry is `https://registry.npmjs.org`; prereleases use the `next`
-dist-tag. The workflows deliberately reject stable versions. An independent cryptographic
-review, device acceptance and an explicit stable-release policy are required before that changes.
-Do not describe an alpha publication as an anonymity certification or production security audit.
+`1.0.0` is the planned first final release, distributed under Apache-2.0 with bundled Noble MIT
+notices. It remains unreleased while development and validation are incomplete. The public npm
+registry is `https://registry.npmjs.org`; final releases use the `latest` dist-tag. The workflows
+reject prerelease versions and versions below 1.0.0.
+
+Publish only after the agreed feature scope is complete, physical iOS/Android acceptance and
+independent cryptographic review are complete, and the documented security/privacy requirements
+and external release controls have been verified. Participant anonymity is currently unmet; resolve
+that requirement before approving the final release. A version number or passing CI does not
+establish production readiness or anonymity.
 
 The repository prepares two processes:
 
 - `release.yml` validates a version-matching tag on main, verifies/builds the package, attests the
-  tarball and SBOM, and creates a GitHub prerelease with those artifacts.
+  tarball and SBOM, and creates a GitHub release with those artifacts.
 - `publish.yml` is manually dispatched for a reviewed version-matching tag on main. It rebuilds
   with the locked dependencies, runs the release checks, verifies the downloaded checksum,
   attests the exact tarball/SBOM, then submits that tarball through npm trusted publishing to
@@ -32,7 +37,7 @@ These controls cannot be established by package source alone:
 3. Configure the package's npm trusted publisher for organization `enigm-llc`, repository
    `enigm-crypto`, workflow filename `publish.yml`, environment `npm-release`, stage-only permissions.
    Do not add a long-lived write token to the repository.
-4. Set `NPM_RELEASE_READY=true` in the `npm-release` environment only after these controls and
+4. Set `NPM_RELEASE_READY=true` in the `npm-release` environment only after final release acceptance, these controls and
    publisher configuration have been verified. Without it, the staging job fails closed.
 5. If the package has no settings page yet, an authorized maintainer must bootstrap the npm
    package/scope using npm's supported first-publication/staging process, then configure trusted
@@ -69,7 +74,7 @@ npm run release:check
 npm run pack:verify
 npm run --silent sbom > enigm-crypto.cdx.json
 npm pack --dry-run
-node scripts/verify-release.mjs --tag v0.2.0-alpha.0
+node scripts/verify-release.mjs --tag v1.0.0
 ```
 
 `test:package` checks the tarball's ESM/CJS/React Native imports, modular exports, TypeScript
@@ -90,7 +95,7 @@ network, notifications or multimedia behavior.
 ## Authorized release
 
 After reviews and checks pass, merge the reviewed commit, create its exact `vVERSION` tag on main,
-and review the generated GitHub prerelease/checksums/attestations. Dispatch `publish.yml` **on the same tag ref**, with
+and review the generated GitHub release/checksums/attestations. Dispatch `publish.yml` **on the same tag ref**, with
 that tag input only after external setup is complete. The workflow ref must equal the requested tag so OIDC provenance records the actual release
 commit, not the branch from which dispatch was requested. Never rebuild a different tarball in the stage
 job or run lifecycle scripts from the downloaded candidate.
@@ -106,6 +111,6 @@ npm stage download STAGE_ID
 npm stage approve STAGE_ID
 ```
 
-Once approved, verify installation from the registry and the `next` dist-tag in a clean consumer.
+Once approved, verify installation from the registry and the `latest` dist-tag in a clean consumer.
 If staging is wrong, reject it rather than approving and attempting to replace an immutable
 published version. A wrong public release requires a new version and an appropriate advisory.

@@ -9,8 +9,9 @@ share. Do not include production keys, user data or provider credentials.
 
 ## Supported versions
 
-The latest tagged prerelease is the supported candidate while the package remains below 1.0.
-Untagged source and older prereleases have no stability or support guarantee.
+No final release is currently published. `1.0.0` is the planned first final release; the development
+source has no production stability or support guarantee. After publication, the latest final release
+is supported; older releases require an explicit support commitment.
 
 ## Cryptographic claims
 
@@ -31,8 +32,8 @@ for the cryptographic implementation.
 - Complete independent cryptographic review before a stable release.
 - Treat changes to transcripts, framing, key derivation or suite identifiers as protocol changes.
 
-GitHub releases remain explicitly marked as pre-release while the package version is below 1.0 and
-the independent cryptographic review is incomplete. CI npm submission must use trusted publishing and
+Do not create a final release until development, device acceptance and independent cryptographic
+review are complete and the agreed privacy requirements are met. CI npm submission must use trusted publishing and
 the exact tarball produced by the protected release workflow, with maintainer 2FA approval of
 the staged version. Namespace bootstrap and external release controls are documented in
 [Release](docs/RELEASE.md).

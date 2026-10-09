@@ -85,7 +85,7 @@ jobs:
         with:
           name: enigm-crypto-release
           path: release
-      - run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes --prerelease
+      - run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

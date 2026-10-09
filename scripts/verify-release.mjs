@@ -5,12 +5,12 @@ import { resolve } from 'node:path';
 export const validateReleaseMetadata = (metadata, lock, tag) => {
   if (metadata.name !== '@enigm/crypto' || metadata.license !== 'Apache-2.0' || metadata.private === true)
     throw new Error('Invalid public package identity or license.');
-  if (!/^0\.\d+\.\d+-(alpha|beta|rc)\.\d+$/u.test(metadata.version))
-    throw new Error('This workflow permits prereleases only; stable releases require independent review.');
+  if (!/^[1-9]\d*\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(metadata.version))
+    throw new Error('This workflow permits final release versions starting at 1.0.0 only.');
   if (tag !== undefined && tag !== `v${metadata.version}`) throw new Error('Release tag does not match package version.');
-  if (metadata.publishConfig?.access !== 'public' || metadata.publishConfig?.tag !== 'next' ||
+  if (metadata.publishConfig?.access !== 'public' || metadata.publishConfig?.tag !== 'latest' ||
       metadata.publishConfig?.registry !== 'https://registry.npmjs.org')
-    throw new Error('Invalid public npm prerelease configuration.');
+    throw new Error('Invalid public npm release configuration.');
   if (metadata.repository?.url !== 'git+https://github.com/enigm-llc/enigm-crypto.git')
     throw new Error('Repository URL does not match release provenance.');
   if (lock.name !== metadata.name || lock.version !== metadata.version ||
@@ -28,5 +28,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const metadata = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
   const lock = JSON.parse(readFileSync(new URL('package-lock.json', root), 'utf8'));
   validateReleaseMetadata(metadata, lock, args[1]);
-  console.log(`Release metadata verified: ${metadata.name}@${metadata.version}, public next prerelease.`);
+  console.log(`Release metadata verified: ${metadata.name}@${metadata.version}, public latest release target.`);
 }

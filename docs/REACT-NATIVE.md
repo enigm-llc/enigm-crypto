@@ -1,6 +1,6 @@
 # React Native and Hermes
 
-Install the reviewed npm prerelease or release tarball, then import public entry points:
+Install the reviewed npm release or release tarball, then import public entry points:
 
 ```ts
 import { utf8 } from '@enigm/crypto/core';

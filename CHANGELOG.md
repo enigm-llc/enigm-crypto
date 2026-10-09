@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.2.0-alpha.0 — prerelease candidate
+## 1.0.0 — Unreleased
 
 - Add modular core, primitives, protocols, codecs and SDK imports while preserving root exports.
 - Add bundled ESM, CommonJS and React Native entry points with internal strict UTF-8 support.

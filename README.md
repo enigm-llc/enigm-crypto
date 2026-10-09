@@ -5,7 +5,8 @@ cryptography, with a portable messaging SDK. It runs through public ESM, CommonJ
 React Native entry points. It provides no built-in network transport, platform storage,
 UI, analytics or telemetry. Host-supplied adapters control persistence and network requests.
 
-**Status:** `0.2.0-alpha.0` is a prerelease candidate. It has not completed an independent
+**Status:** development in progress; `1.0.0` is the planned first final release and is not yet
+published or approved for production. It has not completed an independent
 cryptographic audit and is not a FIPS 140-3 validated module. The message SDK encrypts content
 but exposes participant/routing metadata; it is **not a server-blind anonymous messaging
 protocol**. Read [Security](SECURITY.md), [Privacy](docs/PRIVACY.md) and the
@@ -13,17 +14,17 @@ protocol**. Read [Security](SECURITY.md), [Privacy](docs/PRIVACY.md) and the
 
 ## Installation
 
-After the first approved npm prerelease is available:
+After the first approved npm release is available:
 
 ```sh
-npm install @enigm/crypto@next
+npm install @enigm/crypto
 ```
 
 Before that release, install a reviewed release tarball after verifying its checksum and
 GitHub provenance against the intended repository and commit:
 
 ```sh
-npm install ./enigm-crypto-0.2.0-alpha.0.tgz
+npm install ./enigm-crypto-1.0.0.tgz
 ```
 
 Node.js 20.19 or newer is supported. Browser and React Native runtimes must provide OS-backed
