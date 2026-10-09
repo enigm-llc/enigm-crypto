@@ -22,16 +22,18 @@ const checkBase64Size = (encodedLength: number, maximumBytes?: number): void => 
   if (encodedLength > 4 * Math.ceil(maximumBytes / 3)) throw new Error("Base64 value is too large.");
 };
 
+const base64Padding = (value: string): number => {
+  if (value.endsWith("==")) return 2;
+  return value.endsWith("=") ? 1 : 0;
+};
+
 export const decodeBase64 = (value: string, maximumBytes?: number): Uint8Array => {
   checkBase64Size(value.length, maximumBytes);
   if (value === "") return new Uint8Array();
   if (value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(value)) {
     throw new Error("Invalid base64 value.");
   }
-  let padding = 0;
-  if (value.endsWith("==")) padding = 2;
-  else if (value.endsWith("=")) padding = 1;
-  const length = (value.length / 4) * 3 - padding;
+  const length = (value.length / 4) * 3 - base64Padding(value);
   if (maximumBytes !== undefined && length > maximumBytes) throw new Error("Base64 value is too large.");
   const output = new Uint8Array(length);
   let outputOffset = 0;
