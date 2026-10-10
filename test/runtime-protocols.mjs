@@ -72,11 +72,10 @@ for (const [encoded, decode] of [[identityWire, api.decodePublicIdentity], [kemW
   [wire, api.decodeEnvelope], [sealedWire, api.decodeSealedSenderEnvelope]]) {
   for (const field of [1, 2]) {
     for (const invalid of [[0xc0, 0x80], [0xed, 0xa0, 0x80], [0xf4, 0x90, 0x80, 0x80], [0xc2]]) {
-      assert.throws(() => decode(replaceField(encoded, field, Uint8Array.from(invalid))),
-        field === 1 && invalid.length > 2 ? Error : TypeError);
+      assert.throws(() => decode(replaceField(encoded, field, Uint8Array.from(invalid))), Error);
     }
     const text = field === 1 ? String(api.PROTOCOL_VERSION) : api.CIPHER_SUITE;
-    if (field === 2) assert.deepEqual(decode(replaceField(encoded, field, api.utf8('\ufeff' + text))), decode(encoded));
+    assert.throws(() => decode(replaceField(encoded, field, api.utf8('\ufeff' + text))));
   }
 }
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');

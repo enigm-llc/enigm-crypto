@@ -29,12 +29,16 @@ Verify a recipient's public identity and its complete transparency proof with
 Identity binding alone does not prove current active membership or witness quorum.
 Use trusted configuration, never log keys supplied in an untrusted message.
 
-`device.openSessionEncodedPending` opens without consuming a one-time key; call
-`consumeOpenedSessionKey` only after authenticated receive state has been persisted.
+`device.openSessionEncodedPending` opens without consuming a one-time key. Low-level callers that
+persist a session must use `consumeOpenedSessionKeyForSession` with a stable claim and a durable
+pending record; the message client implements this flow. Its session record and pending claim are
+persisted together, and a retry completes the adapter's idempotent claim before the session is used.
+Transfers fail closed while a claim is pending. `consumeOpenedSessionKey` remains only for
+lower-level envelope use that does not persist a session.
 Session methods also expose recovery, transfer state and group epoch operations.
 Persist advancement before acknowledging delivery. Retain private prekeys for delayed delivery
 according to the application's lifecycle policy. Hosts must serialize complete receive operations
-for each local account; individual state transactions alone do not serialize prekey consumption.
+for each local account as an additional integration control.
 
 ```ts
 import { encryptEnigmAttachment, decryptEnigmAttachment } from '@enigm/crypto/sdk';

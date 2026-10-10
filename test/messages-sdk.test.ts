@@ -38,7 +38,7 @@ const memory = () => {
     },
   };
 };
-const setup = () => {
+const setup = (settings: { failSessionConsumeOnce?: boolean } = {}) => {
   const alice = generateIdentity((length) => new Uint8Array(length).fill(1));
   const bob = generateIdentity((length) => new Uint8Array(length).fill(2));
   const expiry = Date.now() + 600000;
@@ -57,12 +57,28 @@ const setup = () => {
     },
   };
   const consumed: string[] = [];
+  const sessionClaims = new Map<string, string>();
+  let sessionConsumeAttempts = 0;
   const device = createEnigmDeviceClient({
     randomSource: random,
     store: {
       load: async (id) => structuredClone(material[id as "alice" | "bob"]),
       consume: async (_account, id) => {
         consumed.push(id);
+      },
+      consumeForSession: async (_account, id, claimId) => {
+        sessionConsumeAttempts += 1;
+        if (settings.failSessionConsumeOnce && sessionConsumeAttempts === 1) {
+          throw new Error("Simulated one-time key store failure");
+        }
+        const existing = sessionClaims.get(id);
+        if (existing !== undefined && existing !== claimId) {
+          throw new Error("One-time key already claimed by another session");
+        }
+        if (existing === undefined) {
+          sessionClaims.set(id, claimId);
+          consumed.push(id);
+        }
       },
     },
   });
@@ -103,6 +119,8 @@ const setup = () => {
     sessions,
     store,
     consumed,
+    sessionClaims,
+    get sessionConsumeAttempts() { return sessionConsumeAttempts; },
     senderBinding,
     bob,
     alice,
@@ -184,6 +202,42 @@ test("tampered bootstrap cannot commit state or consume its one-time key", async
   );
   assert.equal(f.store.rows.has("bob"), false);
   assert.equal(f.consumed.length, 0);
+});
+
+test("bootstrap resumes an idempotent one-time key claim before using the committed session", async () => {
+  const f = setup({ failSessionConsumeOnce: true });
+  const encrypted = await f.client.encryptMessage({
+    accountId: "alice",
+    conversationId: "c",
+    messageId: "m",
+    senderDeviceId: "alice-device",
+    senderBinding: f.senderBinding,
+    plaintext: utf8("recoverable"),
+    targets: [{
+      userId: "bob",
+      deviceId: "bob-device",
+      encodedIdentity: encodeBase64(encodePublicIdentity(publicIdentity(f.bob))),
+      encodedBundle: f.bobBundle,
+      identityKeyId: encodeBase64(f.bob.keyId),
+    }],
+  });
+  const input = {
+    accountId: "bob",
+    conversationId: "c",
+    messageId: "m",
+    currentDeviceId: "bob-device",
+    expectedSenderUserId: "alice",
+    encrypted,
+  };
+  await assert.rejects(f.client.decryptMessage(input), /key store failure/);
+  const pending = JSON.parse(f.store.rows.get("bob")!);
+  assert.equal(Object.keys(pending.pendingPrekeyUses).length, 1);
+  await assert.rejects(f.sessions.exportTransferState("bob", "bob-device"), /pending/);
+  assert.deepEqual(await f.client.decryptMessage(input), utf8("recoverable"));
+  const finalized = JSON.parse(f.store.rows.get("bob")!);
+  assert.equal(finalized.pendingPrekeyUses, undefined);
+  assert.equal(f.sessionConsumeAttempts, 2);
+  assert.equal(f.consumed.length, 1);
 });
 
 test("message SDK rejects altered sender attribution and duplicate targets", async () => {
@@ -292,6 +346,7 @@ test('delimiter-bearing SDK identifiers cannot alias the deployed session locato
  assert.throws(()=>f.client.needsMessageSession('alice','a:b','c','d'),/identifier/);
  assert.throws(()=>f.client.needsMessageSession('alice','a','b:c','d'),/identifier/);
  assert.throws(()=>f.client.needsMessageSession('alice','a','b|c','d'),/identifier/);
+ assert.throws(()=>f.client.needsMessageSession('alice','a\ud800','b','c'),/surrogate/);
 });
 
 test('selected content-key fields are bounded and message limits accept the exact configured boundary', async () => {

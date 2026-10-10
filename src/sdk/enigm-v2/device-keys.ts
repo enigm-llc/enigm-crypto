@@ -144,5 +144,15 @@ export const createEnigmDeviceClient = (options: {
     },
     consumeOpenedSessionKey: (accountId: string, keyId: string) =>
       options.store.consume(accountId, keyId),
+    consumeOpenedSessionKeyForSession: async (
+      accountId: string,
+      keyId: string,
+      claimId: string
+    ) => {
+      if (!options.store.consumeForSession) {
+        throw new Error("The device key store does not support idempotent session claims.");
+      }
+      await options.store.consumeForSession(accountId, keyId, claimId);
+    },
   };
 };

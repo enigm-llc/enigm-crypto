@@ -30,9 +30,14 @@ Deleting trust is an explicit reset and removes prior rollback protection.
 `load(accountId)` returns the private identity plus private KEM bundles with `lastResort` flags.
 Return fresh independently owned byte buffers, because the SDK wipes its copies after use.
 Do not return references to the adapter's persistent or shared in-memory keys.
-`consume(accountId, keyId)` atomically consumes a one-time bundle and rejects reuse.
-Last-resort bundles are not consumed. Serialize complete receive operations by local account
-outside the SDK's individual record locks to prevent concurrent prekey reuse.
+`consume(accountId, keyId)` atomically consumes a one-time bundle for lower-level envelope use.
+Messaging adapters must also implement `consumeForSession(accountId, keyId, claimId)`. That
+operation atomically records the stable claim while consuming an active key, succeeds when the
+same claim is retried, and rejects every different claim for that key. Retain the claim tombstone
+for at least as long as the key can appear in delayed messages or migrated state. The message SDK
+fails closed when this capability is absent, and its durable session journal resumes an ambiguous
+write or process interruption before the session can be used. Last-resort bundles are not consumed.
+Serialize complete receive operations by local account as an additional host-side control.
 
 ## Transparency and transport
 

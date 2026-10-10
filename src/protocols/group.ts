@@ -4,6 +4,7 @@ import { sha256, sha512 } from '@noble/hashes/sha2.js';
 import { randomBytes } from '@noble/post-quantum/utils.js';
 
 import { assertLength, clone, frame, u32, utf8, wipe } from '../core/bytes.js';
+import { assertWellFormedUtf16 } from '../core/utf8.js';
 import { PROTOCOL_VERSION, type GroupEpochState, type RandomSource } from '../core/types.js';
 
 export type GroupEpochCiphertext = {
@@ -25,6 +26,7 @@ const canonicalMembers = (memberDeviceIds: readonly string[]): Uint8Array => {
     if (left > right) return 1;
     return 0;
   });
+  normalized.forEach((id) => assertWellFormedUtf16(id, 'Group member device identifier'));
   if (normalized.length !== memberDeviceIds.length || normalized.some((id) => id.length < 1 || id.length > 256)) {
     throw new Error('Invalid or duplicate group member device identifier.');
   }

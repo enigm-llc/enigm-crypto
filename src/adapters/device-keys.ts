@@ -8,4 +8,9 @@ export interface DeviceKeyStore {
     bundles: readonly { bundle: PrivateKemBundle; lastResort: boolean }[];
   }>;
   consume(accountId: string, keyId: string): Promise<void>;
+  /**
+   * Atomically consumes a one-time key for a stable session claim.
+   * Repeating the same claim must succeed; a different claim for the key must fail.
+   */
+  consumeForSession?(accountId: string, keyId: string, claimId: string): Promise<void>;
 }

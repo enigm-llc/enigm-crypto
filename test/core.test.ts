@@ -117,6 +117,14 @@ test("sealed sender hides its identity outside the encrypted envelope", () => {
   );
 });
 
+test("cryptographic group and C2SP identifiers reject ambiguous UTF-16", () => {
+  assert.throws(() => createGroupEpoch(new Uint8Array(16), ["device-\ud800"]), /surrogate/);
+  assert.throws(
+    () => c2spCheckpointText({ origin: "keys-\ud800", size: 1, rootHash: new Uint8Array(32) }),
+    /surrogate/,
+  );
+});
+
 test("key transparency state proofs bind current activation state to a log entry", () => {
   const empty = emptyKeyTransparencyStateHash();
   const firstKey = new Uint8Array(32).fill(1);

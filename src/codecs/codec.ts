@@ -1,4 +1,3 @@
-import { decodeUtf8 } from '../core/utf8.js';
 import {
   CIPHER_SUITE,
   PROTOCOL_VERSION,
@@ -46,16 +45,14 @@ class FrameReader {
   }
 }
 
-const decodeText = decodeUtf8;
-
 const decodeVersionAndSuite = (reader: FrameReader): void => {
   if (!equal(reader.readExact(MAGIC.length, 'Object magic'), MAGIC)) {
     throw new Error('Invalid Enigm V2 object magic.');
   }
-  if (decodeText(reader.read(2)) !== String(PROTOCOL_VERSION)) {
+  if (!equal(reader.read(2), utf8(String(PROTOCOL_VERSION)))) {
     throw new Error('Unsupported Enigm protocol version.');
   }
-  if (decodeText(reader.read(128)) !== CIPHER_SUITE) throw new Error('Unsupported cipher suite.');
+  if (!equal(reader.read(128), utf8(CIPHER_SUITE))) throw new Error('Unsupported cipher suite.');
 };
 
 const encodePrefix = (): readonly Uint8Array[] => [MAGIC, utf8(String(PROTOCOL_VERSION)), utf8(CIPHER_SUITE)];

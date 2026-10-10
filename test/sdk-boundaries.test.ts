@@ -14,7 +14,7 @@ test('invalid checkpoint consistency is rejected before durable advance',async()
  assert.equal(JSON.stringify([...rows]),before);
 });
 test('missing witness quorum cannot bootstrap trust and invalid quorum configuration fails closed',async()=>{
- const options={witnesses:[{name:'witness.test/v1',publicKey:'Zr5+Myx6RTMyvZ0Kf32wVfXF7xoGraZtmLOftoEMRzo='}],quorum:1};
+ const options={witnesses:[{name:'witness.test/v1',publicKey:encodeBase64(new Uint8Array(32).fill(12))}],quorum:1};
  const {rows,verifier}=setup(options);
  await assert.rejects(verifier.verifyIdentity({accountId:'local',...buildProof()}),/WITNESS_QUORUM_UNAVAILABLE/);
  assert.equal(rows.size,0);
@@ -49,14 +49,32 @@ const witnessed = (fixture: ReturnType<typeof buildProof>) => {
 };
 test('witnesses are counted once and loss of quorum permits only previously witnessed identities',async()=>{
  const fixture=buildProof();const witness=witnessed(fixture);
- const {verifier,rows}=setup({witnesses:[witness,witness],quorum:1,now:()=>1_800_000_000_000});
+ const {verifier,rows}=setup({witnesses:[witness],quorum:1,now:()=>1_800_000_000_000});
  assert.equal((await verifier.verifyIdentity({accountId:'local',...fixture})).verified,1);
  const uncosigned=buildProof();
  assert.equal((await verifier.verifyIdentity({accountId:'local',...uncosigned})).quorumMet,false);
  assert.ok(rows.size>0);
  const fresh=setup({witnesses:[witness],quorum:1,now:()=>1_800_000_000_000});
  await assert.rejects(fresh.verifier.verifyIdentity({accountId:'local',...uncosigned}),/WITNESS_QUORUM_UNAVAILABLE/);
- assert.throws(()=>setup({witnesses:[witness,witness],quorum:2}),/INVALID_WITNESS_CONFIGURATION/);
+ assert.throws(()=>setup({witnesses:[witness,witness],quorum:1}),/INVALID_WITNESS_CONFIGURATION/);
+});
+test('witness quorum requires distinct authorities and excludes the log key',()=>{
+ const fixture=buildProof();const witness=witnessed(fixture);
+ const otherKey=encodeBase64(ed25519.getPublicKey(new Uint8Array(32).fill(13)));
+ assert.throws(()=>setup({witnesses:[witness,{...witness,name:'witness.test/v2'}],quorum:2}),/INVALID_WITNESS_CONFIGURATION/);
+ assert.throws(()=>setup({witnesses:[witness,{name:witness.name,publicKey:otherKey}],quorum:1}),/INVALID_WITNESS_CONFIGURATION/);
+ assert.throws(()=>setup({witnesses:[{name:'log-as-witness',publicKey:'Zr5+Myx6RTMyvZ0Kf32wVfXF7xoGraZtmLOftoEMRzo='}],quorum:1}),/INVALID_WITNESS_CONFIGURATION/);
+ assert.throws(()=>setup({origin:'keys.\ud800',witnesses:[],quorum:0}),/INVALID_WITNESS_CONFIGURATION/);
+});
+test('transparency trust configuration is immutable after verifier construction',async()=>{
+ const fixture=buildProof();const witness=witnessed(fixture);const rows=new Map<string,string>();
+ const store={read:async(key:string)=>rows.get(key)??null,write:async(key:string,value:string)=>{rows.set(key,value);},delete:async(key:string)=>{rows.delete(key);},exclusive:async<T>(_id:string,action:()=>Promise<T>)=>action()};
+ const options={store,origin:'keys.localhost/v1',logPublicKey:'Zr5+Myx6RTMyvZ0Kf32wVfXF7xoGraZtmLOftoEMRzo=',witnesses:[witness],quorum:1,now:()=>1_800_000_000_000,fetchConsistencyProof:async()=>({version:1,oldSize:1,newSize:2,proof:[]})};
+ const verifier=createEnigmTransparencyVerifier(options);
+ options.quorum=0;options.origin='attacker.invalid/v1';options.logPublicKey=witness.publicKey;
+ options.witnesses[0]!.name='attacker.invalid/witness';options.witnesses=[];
+ const result=await verifier.verifyIdentity({accountId:'local',...fixture});
+ assert.equal(result.required,1);assert.equal(result.verified,1);assert.equal(result.quorumMet,true);
 });
 test('oversized and malformed identity proofs cannot write trust',async()=>{
  for(const mutate of [

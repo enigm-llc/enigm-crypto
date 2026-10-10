@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { encodeUtf8, decodeUtf8 } from '../src/utf8.js';
+import { assertWellFormedUtf16, encodeUtf8, decodeUtf8 } from '../src/utf8.js';
+
+test('security-sensitive text can reject unpaired UTF-16 surrogates without changing UTF-8 compatibility', () => {
+  for (const value of ['', 'español', '😀', '\ud800\udc00']) assert.doesNotThrow(() => assertWellFormedUtf16(value));
+  for (const value of ['\ud800', '\udc00', 'a\ud800b', '\ud800\ud800\udc00']) {
+    assert.throws(() => assertWellFormedUtf16(value), TypeError);
+  }
+});
 
 test('UTF-8 matches native encoding across UTF-16 boundaries and lone surrogates', () => {
   const encoder = new TextEncoder();

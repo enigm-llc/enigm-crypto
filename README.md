@@ -116,7 +116,8 @@ preserve UTF-8 base64 inside the encrypted payload; this is not a streaming file
 
 - Verify public keys against account/device ownership and a complete witnessed transparency proof.
 - Keep private identities, prekeys, session and recovery state in account/device-scoped secure storage.
-- Serialize complete receive operations and atomically consume one-time prekeys after authenticated persistence.
+- Implement idempotent per-session one-time-key claims and retain their tombstones for delayed retries.
+- Serialize complete receive operations in addition to the SDK's durable pending-consumption journal.
 - Preserve private prekeys needed for delayed delivery and historical migration.
 - Bind associated data to unambiguous protocol, conversation, device, message and content identifiers.
 - Persist ratchet advancement before acknowledging delivery; deduplicate transport deliveries separately.

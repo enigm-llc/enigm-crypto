@@ -2,6 +2,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import {
   utf8 as utf8Bytes,
+  assertWellFormedUtf16,
   wipe,
   type RandomSource,
 } from "../../core/index.js";
@@ -77,10 +78,37 @@ export const createEnigmMessageClient = (options: {
   const validateIdentifier = (value: string): void => {
     if (typeof value !== "string" || !value || value.length > 256 || /[:|]/u.test(value))
       throw new Error("Invalid EnigmV2 protocol identifier.");
+    assertWellFormedUtf16(value, "EnigmV2 protocol identifier");
   };
   const randomSource = options.randomSource;
   const digest = (value: string): string =>
     bytesToHex(sha256(utf8Bytes(value)));
+  const pendingPrekeyUse = (
+    opened: { keyId: string; consumable: boolean },
+    sessionId: string,
+    senderIdentityKeyId: string
+  ) => opened.consumable ? {
+    keyId: opened.keyId,
+    claimId: digest(JSON.stringify([
+      "enigm-v2-one-time-key-claim",
+      opened.keyId,
+      sessionId,
+      senderIdentityKeyId,
+    ])),
+  } : undefined;
+  const completePendingPrekeyUse = async (
+    accountId: string,
+    sessionId: string
+  ): Promise<void> => {
+    const pending = await options.sessions.pendingPrekeyUse(accountId, sessionId);
+    if (!pending) return;
+    await options.device.consumeOpenedSessionKeyForSession(
+      accountId,
+      pending.keyId,
+      pending.claimId
+    );
+    await options.sessions.completePendingPrekeyUse(accountId, sessionId, pending);
+  };
 
   const sessionLocator = (
     conversationId: string,
@@ -118,10 +146,12 @@ export const createEnigmMessageClient = (options: {
     messageId: string,
     senderDeviceId: string,
     recipientDeviceId: string
-  ): Uint8Array =>
-    utf8Bytes(
+  ): Uint8Array => {
+    [conversationId, messageId, senderDeviceId, recipientDeviceId].forEach(validateIdentifier);
+    return utf8Bytes(
       `enigm-crypto-v2-recovery|conversation:${conversationId}|message:${messageId}|sender:${senderDeviceId}|recipient:${recipientDeviceId}`
     );
+  };
 
   const decryptLocalMessageEnigmV2 = async (
     input: DecryptMessageInputEnigmV2,
@@ -464,8 +494,14 @@ export const createEnigmMessageClient = (options: {
       context,
       packet.senderIdentityKeyId
     );
+    let plaintext: Uint8Array | undefined;
     try {
-      const plaintext = await options.sessions.bootstrapDecryptAndCommit(
+      const pending = pendingPrekeyUse(
+        opened,
+        packet.sessionId,
+        packet.senderIdentityKeyId!
+      );
+      plaintext = await options.sessions.bootstrapDecryptAndCommit(
         input.accountId,
         packet.sessionId,
         opened.plaintext,
@@ -481,15 +517,14 @@ export const createEnigmMessageClient = (options: {
               packet.senderDeviceId
             )
           ),
-        { accountId: authenticatedSenderUserId!, deviceId: packet.senderDeviceId, identityKeyId: packet.senderIdentityKeyId! }
+        { accountId: authenticatedSenderUserId!, deviceId: packet.senderDeviceId, identityKeyId: packet.senderIdentityKeyId! },
+        pending
       );
-      if (opened.consumable) {
-        await options.device.consumeOpenedSessionKey(
-          input.accountId,
-          opened.keyId
-        );
-      }
+      await completePendingPrekeyUse(input.accountId, packet.sessionId);
       return plaintext;
+    } catch (error) {
+      if (plaintext) wipe(plaintext);
+      throw error;
     } finally {
       wipe(opened.plaintext);
     }
@@ -509,8 +544,10 @@ export const createEnigmMessageClient = (options: {
         throw new Error('EnigmV2 sender attribution migration requires an authenticated bootstrap.');
       const opened = await options.device.openSessionEncodedPending(input.accountId, packet.senderIdentity, packet.bootstrapEnvelope, context, packet.senderIdentityKeyId);
       try {
+        const pending = pendingPrekeyUse(opened, packet.sessionId, packet.senderIdentityKeyId);
         await options.sessions.initializeOrVerifySession(input.accountId, packet.sessionId, opened.plaintext, context, 'responder',
-          { accountId: authenticatedSenderUserId, deviceId: packet.senderDeviceId, identityKeyId: packet.senderIdentityKeyId });
+          { accountId: authenticatedSenderUserId, deviceId: packet.senderDeviceId, identityKeyId: packet.senderIdentityKeyId }, pending);
+        await completePendingPrekeyUse(input.accountId, packet.sessionId);
       } finally { wipe(opened.plaintext); }
     }
   };
@@ -590,6 +627,9 @@ export const createEnigmMessageClient = (options: {
       input.accountId,
       packet.sessionId
     );
+    if (sessionExists) {
+      await completePendingPrekeyUse(input.accountId, packet.sessionId);
+    }
     if (
       input.encrypted.version === 2 &&
       input.expectedSenderUserId &&

@@ -7,6 +7,7 @@ export { KeyTransparencyErrorEnigmV2 } from "./errors.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { utf8, concat } from "../../core/bytes.js";
+import { assertWellFormedUtf16 } from "../../core/utf8.js";
 import { encodeBase64, decodeBase64 } from "../../core/base64.js";
 import {
   keyTransparencyEventHash,
@@ -36,17 +37,58 @@ export type KeyTransparencyWitnessVerificationEnigmV2 = {
 export const createEnigmTransparencyVerifier = (
   options: EnigmTransparencyOptions
 ) => {
+  const origin = options.origin;
+  const quorum = options.quorum;
+  const store = options.store;
+  const fetchConsistencyProofAdapter = options.fetchConsistencyProof;
+  const now = options.now ?? Date.now;
   const maximumWitnessAgeSeconds = options.maximumWitnessAgeSeconds ?? 86_400;
   if (!Number.isSafeInteger(maximumWitnessAgeSeconds) || maximumWitnessAgeSeconds < 1)
     throw new KeyTransparencyErrorEnigmV2("INVALID_WITNESS_CONFIGURATION");
-  const hash = (value: string) => bytesToHex(sha256(utf8(value)));
+  const hash = (value: string) => {
+    assertWellFormedUtf16(value, "Key transparency identifier");
+    return bytesToHex(sha256(utf8(value)));
+  };
   const storeValue = (value: string, label: string) =>
-    options.store.write(label, value);
+    store.write(label, value);
+  const canonicalBase64 = (value: string, label: string): Uint8Array => {
+    if (!/^[A-Za-z0-9+/]{43}=$/.test(value)) {
+      throw new KeyTransparencyErrorEnigmV2(`INVALID_${label}`);
+    }
+    const decoded = decodeBase64(value);
+    if (decoded.length !== 32 || encodeBase64(decoded) !== value) {
+      throw new KeyTransparencyErrorEnigmV2(`INVALID_${label}`);
+    }
+    return new Uint8Array(decoded);
+  };
+  type ConfiguredWitnessV2 = {
+    name: string;
+    publicKey: Uint8Array;
+    fingerprint: string;
+  };
+  let logPublicKey: Uint8Array;
+  let witnesses: ConfiguredWitnessV2[];
+  try {
+    assertWellFormedUtf16(origin, "Key transparency origin");
+    logPublicKey = canonicalBase64(options.logPublicKey, "LOG_PUBLIC_KEY");
+    witnesses = options.witnesses.map((witness) => {
+      assertWellFormedUtf16(witness.name, "Key transparency witness name");
+      const publicKey = canonicalBase64(witness.publicKey, "WITNESS_KEY");
+      return { name: witness.name, publicKey, fingerprint: encodeBase64(publicKey) };
+    });
+  } catch {
+    throw new KeyTransparencyErrorEnigmV2("INVALID_WITNESS_CONFIGURATION");
+  }
+  const witnessNames = new Set(witnesses.map((witness) => witness.name));
+  const witnessKeys = new Set(witnesses.map((witness) => witness.fingerprint));
   if (
-    !Number.isSafeInteger(options.quorum) ||
-    options.quorum < 0 ||
-    options.witnesses.length > 15 ||
-    options.quorum > new Set(options.witnesses.map((w) => w.name)).size
+    !Number.isSafeInteger(quorum) ||
+    quorum < 0 ||
+    witnesses.length > 15 ||
+    witnessNames.size !== witnesses.length ||
+    witnessKeys.size !== witnesses.length ||
+    witnessKeys.has(encodeBase64(logPublicKey)) ||
+    quorum > witnessKeys.size
   )
     throw new KeyTransparencyErrorEnigmV2("INVALID_WITNESS_CONFIGURATION");
   const IDENTITY_DOMAIN = utf8("enigm-key-transparency-identity-v2\0");
@@ -61,11 +103,9 @@ export const createEnigmTransparencyVerifier = (
     rootHash: string;
   };
 
-  type ConfiguredWitnessV2 = { name: string; publicKey: string };
-
   const verifyIdentityBindingEnigmV2 = (
     input: EnigmIdentityBindingInput
-  ): void => verifyEnigmIdentityBinding(input, options.logPublicKey);
+  ): void => verifyEnigmIdentityBinding(input, encodeBase64(logPublicKey));
 
   const checkpointLabel = (accountId: string): string =>
     `checkpoint:${hash(accountId)}`;
@@ -76,7 +116,7 @@ export const createEnigmTransparencyVerifier = (
   const loadTrustedIdentities = async (
     accountId: string
   ): Promise<Set<string>> => {
-    const stored = await options.store.read(identityTrustLabel(accountId));
+    const stored = await store.read(identityTrustLabel(accountId));
     if (!stored) return new Set();
     try {
       const parsed = JSON.parse(stored) as unknown;
@@ -96,17 +136,6 @@ export const createEnigmTransparencyVerifier = (
     }
   };
 
-  const canonicalBase64 = (value: string, label: string): Uint8Array => {
-    if (!/^[A-Za-z0-9+/]{43}=$/.test(value)) {
-      throw new KeyTransparencyErrorEnigmV2(`INVALID_${label}`);
-    }
-    const decoded = decodeBase64(value);
-    if (decoded.length !== 32 || encodeBase64(decoded) !== value) {
-      throw new KeyTransparencyErrorEnigmV2(`INVALID_${label}`);
-    }
-    return new Uint8Array(decoded);
-  };
-
   const equalBase64 = (value: Uint8Array, expected: string): boolean =>
     encodeBase64(value) === expected;
 
@@ -115,25 +144,17 @@ export const createEnigmTransparencyVerifier = (
     throw new KeyTransparencyErrorEnigmV2("INVALID_ACTION");
   };
 
-  const configuredWitnesses = (): ConfiguredWitnessV2[] => {
-    const parsed: unknown = options.witnesses;
-    if (!Array.isArray(parsed))
-      throw new KeyTransparencyErrorEnigmV2("INVALID_WITNESS_CONFIGURATION");
-    return parsed as ConfiguredWitnessV2[];
-  };
-
   const verifyWitnesses = (
     signedCheckpoint: string,
     witnessCosignatures: readonly string[],
     treeSize: number,
     rootHash: Uint8Array
   ): KeyTransparencyWitnessVerificationEnigmV2 => {
-    const witnesses = configuredWitnesses();
     if (witnessCosignatures.length > 15) {
       return {
         verified: 0,
         total: witnesses.length,
-        required: options.quorum,
+        required: quorum,
         quorumMet: false,
       };
     }
@@ -141,30 +162,30 @@ export const createEnigmTransparencyVerifier = (
       line.endsWith("\n") ? line : `${line}\n`
     );
     const signedNote = `${signedCheckpoint}${normalizedLines.join("")}`;
-    const nowSeconds = Math.floor((options.now ?? Date.now)() / 1000);
+    const nowSeconds = Math.floor(now() / 1000);
     let accepted = 0;
     const seen = new Set<string>();
     for (const witness of witnesses) {
-      if (seen.has(witness.name)) continue;
+      if (seen.has(witness.fingerprint)) continue;
       const timestamp = verifyC2spWitnessCosignature(
         signedNote,
-        { origin: options.origin, size: treeSize, rootHash },
+        { origin, size: treeSize, rootHash },
         {
           name: witness.name,
-          publicKey: canonicalBase64(witness.publicKey, "WITNESS_KEY"),
+          publicKey: witness.publicKey,
         },
         nowSeconds
       );
       if (timestamp !== null && nowSeconds - timestamp <= maximumWitnessAgeSeconds) {
-        seen.add(witness.name);
+        seen.add(witness.fingerprint);
         accepted += 1;
       }
     }
     return {
       verified: accepted,
       total: witnesses.length,
-      required: options.quorum,
-      quorumMet: accepted >= options.quorum,
+      required: quorum,
+      quorumMet: accepted >= quorum,
     };
   };
 
@@ -209,14 +230,14 @@ export const createEnigmTransparencyVerifier = (
       canonicalBase64(item, "INCLUSION_PROOF")
     );
     const checkpoint = {
-      origin: options.origin,
+      origin,
       size: proof.treeSize,
       rootHash,
     };
     if (
       !verifyC2spLogSignature(proof.signedCheckpoint, checkpoint, {
-        name: options.origin,
-        publicKey: canonicalBase64(options.logPublicKey, "LOG_PUBLIC_KEY"),
+        name: origin,
+        publicKey: logPublicKey,
       })
     ) {
       throw new KeyTransparencyErrorEnigmV2("INVALID_LOG_SIGNATURE");
@@ -249,7 +270,7 @@ export const createEnigmTransparencyVerifier = (
   ): Promise<Uint8Array[]> => {
     let raw: unknown;
     try {
-      raw = await options.fetchConsistencyProof(from, to);
+      raw = await fetchConsistencyProofAdapter(from, to);
     } catch {
       throw new KeyTransparencyErrorEnigmV2("CONSISTENCY_UNAVAILABLE");
     }
@@ -308,7 +329,7 @@ export const createEnigmTransparencyVerifier = (
   const loadStoredCheckpoint = async (
     accountId: string
   ): Promise<StoredCheckpointV2 | null> => {
-    const stored = await options.store.read(checkpointLabel(accountId));
+    const stored = await store.read(checkpointLabel(accountId));
     if (!stored) return null;
 
     let previous: StoredCheckpointV2;
@@ -360,7 +381,7 @@ export const createEnigmTransparencyVerifier = (
     identityKeyCommitment: string,
     witnessed: boolean
   ): Promise<void> => {
-    await options.store.exclusive(accountId, async () => {
+    await store.exclusive(accountId, async () => {
       const trustedIdentities = await loadTrustedIdentities(accountId);
       assertWitnessContinuity(
         witnessed,
@@ -525,7 +546,7 @@ export const createEnigmTransparencyVerifier = (
       throw new KeyTransparencyErrorEnigmV2("INVALID_STATE_PROOF");
     }
 
-    if (input.requireFreshWitnesses && (options.quorum < 1 || !anchorLog.witnesses.quorumMet))
+    if (input.requireFreshWitnesses && (quorum < 1 || !anchorLog.witnesses.quorumMet))
       throw new KeyTransparencyErrorEnigmV2("WITNESS_QUORUM_UNAVAILABLE");
     await acceptCheckpoint(
       input.accountId,
@@ -545,9 +566,9 @@ export const createEnigmTransparencyVerifier = (
   const deleteKeyTransparencyStateEnigmV2 = async (
     accountId: string
   ): Promise<void> => {
-    await options.store.exclusive(accountId, () => Promise.all([
-      options.store.delete(checkpointLabel(accountId)),
-      options.store.delete(identityTrustLabel(accountId)),
+    await store.exclusive(accountId, () => Promise.all([
+      store.delete(checkpointLabel(accountId)),
+      store.delete(identityTrustLabel(accountId)),
     ]).then(() => undefined));
   };
 

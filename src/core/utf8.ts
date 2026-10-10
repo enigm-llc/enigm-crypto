@@ -17,6 +17,20 @@ const appendCodePoint = (output: Uint8Array, offset: number, point: number): num
   return offset;
 };
 
+export const assertWellFormedUtf16 = (value: string, label = 'Text'): void => {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      if (index + 1 >= value.length) throw new TypeError(`${label} contains an unpaired surrogate.`);
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) throw new TypeError(`${label} contains an unpaired surrogate.`);
+      index += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      throw new TypeError(`${label} contains an unpaired surrogate.`);
+    }
+  }
+};
+
 // Unpaired UTF-16 surrogates encode as U+FFFD, as with TextEncoder.
 export const encodeUtf8 = (value: string): Uint8Array => {
   const output = new Uint8Array(value.length * 3);

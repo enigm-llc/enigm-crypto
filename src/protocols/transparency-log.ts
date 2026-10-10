@@ -2,6 +2,7 @@ import { ed25519 } from '@noble/curves/ed25519.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import { assertLength, clone, concat, equal, utf8 } from '../core/bytes.js';
+import { assertWellFormedUtf16 } from '../core/utf8.js';
 
 const EMPTY_TREE_HASH = sha256(new Uint8Array());
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -48,6 +49,7 @@ const validateSafeSize = (value: number, label: string): void => {
 };
 
 const validateTextLine = (value: string, label: string): void => {
+  assertWellFormedUtf16(value, label);
   const hasControlCharacter = Array.from(value).some((character) => {
     const code = character.codePointAt(0)!;
     return code <= 0x1f || code === 0x7f;
