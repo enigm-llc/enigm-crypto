@@ -1,0 +1,111 @@
+name: Stage npm release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Reviewed release tag on main, matching package.json (vVERSION)
+        required: true
+        type: string
+
+permissions: {}
+concurrency:
+  group: npm-release-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'enigm-llc/enigm-crypto'
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Validate tag syntax
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          DISPATCH_REF: ${{ github.ref }}
+        run: |
+          test "$DISPATCH_REF" = "refs/tags/$RELEASE_TAG"
+          [[ "$RELEASE_TAG" =~ ^v[1-9][0-9]*\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require reviewed tag commit on main
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor HEAD origin/main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          node scripts/verify-release.mjs --tag "$RELEASE_TAG"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.20.0
+      - run: npm ci --ignore-scripts
+      - run: npm audit --audit-level=high
+      - run: npm audit signatures
+      - run: npm run check
+      - run: npm test
+      - run: npm run examples
+      - run: npm run benchmark
+      - run: npm run test:runtime
+      - run: npm run test:package
+      - run: npm run release:check
+      - run: npm run pack:verify
+      - name: Prepare exact reviewed artifacts
+        run: |
+          mkdir release
+          npm pack --ignore-scripts --pack-destination release
+          npm run --silent sbom > release/enigm-crypto.cdx.json
+          cd release
+          sha256sum ./*.tgz ./enigm-crypto.cdx.json > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: npm-release
+          path: release/
+          if-no-files-found: error
+          retention-days: 7
+
+  stage:
+    needs: build
+    environment: npm-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Require configured release controls
+        env:
+          NPM_RELEASE_READY: ${{ vars.NPM_RELEASE_READY }}
+        run: test "$NPM_RELEASE_READY" = true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.20.0
+          registry-url: https://registry.npmjs.org
+      - name: Require staged publishing CLI support
+        run: npm stage --help > /dev/null
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: npm-release
+          path: release
+      - name: Verify downloaded payload
+        working-directory: release
+        run: sha256sum --check SHA256SUMS
+      - uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45
+        with:
+          subject-path: release/*.tgz
+      - uses: actions/attest-sbom@10926c72720ffc3f7b666661c8e55b1344e2a365
+        with:
+          subject-path: release/*.tgz
+          sbom-path: release/enigm-crypto.cdx.json
+      - name: Stage exact tarball with npm OIDC
+        working-directory: release
+        run: |
+          set -- *.tgz
+          test "$#" -eq 1
+          npm stage publish "$1" --ignore-scripts --access public --tag latest --registry https://registry.npmjs.org

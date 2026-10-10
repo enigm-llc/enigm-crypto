@@ -29,7 +29,9 @@ jobs:
       - run: npm test
       - run: npm run examples
       - run: npm run benchmark
-      - run: npm run build
+      - run: npm run test:runtime
+      - run: npm run test:package
+      - run: npm run release:check
       - run: npm run pack:verify
       - run: npm run --silent sbom > enigm-crypto.cdx.json
       - run: npm pack --dry-run

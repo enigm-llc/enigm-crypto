@@ -12,3 +12,6 @@ export * from './transparency.js';
 export * from './transparency-log.js';
 export * from './transparency-state.js';
 export * from './types.js';
+export * from './sdk/index.js';
+export * from './core/base64.js';
+export { decodeUtf8 } from './core/utf8.js';

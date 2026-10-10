@@ -9,7 +9,9 @@ The library exposes three complementary layers:
 3. An authenticated current-state map whose root is committed by every new log entry. Membership
    proofs show whether an identity is currently active or revoked at the checkpoint being verified.
 
-None of these layers publishes account names, device identifiers or a searchable identity directory.
+The public commitment-only log need not publish account names or device identifiers.
+The SDK identity-binding service still signs literal account/device mappings and therefore knows
+those relationships; authorized lookup material also reveals identities to its recipients.
 Applications should publish only a 32-byte commitment for each canonical private event. An
 authorized identity lookup returns the event preimage and its inclusion proof to the client that is
 allowed to inspect that identity. That response should include both the activation inclusion proof
@@ -82,3 +84,14 @@ The append-only log survives account and device deletion. Its public entries are
 cannot be removed without invalidating subsequent checkpoints. Private lookup material may be
 deleted under the product retention policy; previously published commitments remain non-reversible
 when commitments are derived with a secret, domain-separated key.
+
+
+## Freshness and revocation
+
+Proofs establish active membership at the supplied checkpoint, not that no later revocation exists.
+The SDK counts witness signatures toward new trust only within `maximumWitnessAgeSeconds`
+(default 24 hours). Require an authenticated recent head and a current witness quorum according
+to the deployment's revocation policy. Witness-outage continuity for previously trusted identities
+can return `quorumMet: false`; it must not be described as current revocation verification. A new
+installation or trust reset has no prior head and needs fresh external trust. An append-only
+consistency proof alone cannot prove that the relay supplied the latest checkpoint.

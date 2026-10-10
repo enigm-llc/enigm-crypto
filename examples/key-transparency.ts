@@ -15,7 +15,7 @@ import {
   signC2spCheckpoint,
   signKeyTransparencyCheckpoint,
   verifyKeyTransparencyCheckpoint,
-} from '../src/index.js';
+} from '@enigm/crypto';
 
 const signer = generateIdentity();
 const trusted = emptyKeyTransparencyCheckpoint(Date.now());
