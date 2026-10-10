@@ -949,29 +949,10 @@ class MessagingCryptoManagerEnigmV2 {
       if (!encoded)
         throw new Error("EnigmV2 messaging session is unavailable.");
       const session = decodeSession(encoded);
-      const wire: RatchetCiphertext = {
-        version: message.version,
-        chainId: bytes(message.chainId),
-        counter: message.counter,
-        nonce: bytes(message.nonce),
-        ciphertext: bytes(message.ciphertext),
-      };
-      let next: SessionState | undefined;
-      let plaintext: Uint8Array | undefined;
-      try {
-        const decrypted = sessionDecrypt(session, wire, context);
-        next = decrypted.next;
-        plaintext = decrypted.plaintext;
-        authenticateRecovery(session, plaintext, recoveryAuthentication);
-        const authenticated = await authenticate(plaintext);
-        stored.sessions[key] = encodeSession(next);
-        await this.persist(accountId, stored);
-        return authenticated;
-      } finally {
-        if (plaintext) wipe(plaintext);
-        if (next) wipeSession(next);
-        wipeSession(session);
-      }
+      return this.commitAuthenticatedSession(
+        accountId, stored, key, session, message, context,
+        { authenticate, recoveryAuthentication }
+      );
     });
   }
 
@@ -1004,6 +985,30 @@ class MessagingCryptoManagerEnigmV2 {
         throw new Error("EnigmV2 session capacity reached.");
       }
       const session = initializeSession(rootKey, context, "responder");
+      return this.commitAuthenticatedSession(
+        accountId, stored, key, session, message, context,
+        { authenticate, recoveryAuthentication, sender, pendingPrekeyUse }
+      );
+    });
+  }
+
+  private async commitAuthenticatedSession<T>(
+    accountId: string,
+    stored: StoredMessagingCryptoEnigmV2,
+    key: string,
+    session: SessionState,
+    message: EncodedRatchetMessageEnigmV2,
+    context: Uint8Array,
+    options: {
+      authenticate: (plaintext: Uint8Array) => T | Promise<T>;
+      recoveryAuthentication: RecoveryAuthenticationEnigmV2 | undefined;
+      sender?: EnigmSessionSender | undefined;
+      pendingPrekeyUse?: PendingPrekeyUseEnigmV2 | undefined;
+    }
+  ): Promise<T> {
+    let next: SessionState | undefined;
+    let plaintext: Uint8Array | undefined;
+    try {
       const wire: RatchetCiphertext = {
         version: message.version,
         chainId: bytes(message.chainId),
@@ -1011,24 +1016,20 @@ class MessagingCryptoManagerEnigmV2 {
         nonce: bytes(message.nonce),
         ciphertext: bytes(message.ciphertext),
       };
-      let next: SessionState | undefined;
-      let plaintext: Uint8Array | undefined;
-      try {
-        const decrypted = sessionDecrypt(session, wire, context);
-        next = decrypted.next;
-        plaintext = decrypted.plaintext;
-        authenticateRecovery(session, plaintext, recoveryAuthentication);
-        const authenticated = await authenticate(plaintext);
-        stored.sessions[key] = encodeSession(next);
-        storeBootstrapAttribution(stored, key, sender, pendingPrekeyUse);
-        await this.persist(accountId, stored);
-        return authenticated;
-      } finally {
-        if (plaintext) wipe(plaintext);
-        if (next) wipeSession(next);
-        wipeSession(session);
-      }
-    });
+      const decrypted = sessionDecrypt(session, wire, context);
+      next = decrypted.next;
+      plaintext = decrypted.plaintext;
+      authenticateRecovery(session, plaintext, options.recoveryAuthentication);
+      const authenticated = await options.authenticate(plaintext);
+      stored.sessions[key] = encodeSession(next);
+      storeBootstrapAttribution(stored, key, options.sender, options.pendingPrekeyUse);
+      await this.persist(accountId, stored);
+      return authenticated;
+    } finally {
+      if (plaintext) wipe(plaintext);
+      if (next) wipeSession(next);
+      wipeSession(session);
+    }
   }
 
   public rekey(
