@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const run = (mode, conditions = []) => {
   const result = spawnSync(process.execPath,
     [...conditions, 'test/runtime-protocols.mjs', mode], { encoding: 'utf8' });
+  assert.equal(result.error, undefined, result.error?.message);
   assert.equal(result.status, 0, result.stderr);
   return result.stdout.trim();
 };

@@ -31,12 +31,16 @@ Deleting trust is an explicit reset and removes prior rollback protection.
 Return fresh independently owned byte buffers, because the SDK wipes its copies after use.
 Do not return references to the adapter's persistent or shared in-memory keys.
 `consume(accountId, keyId)` atomically consumes a one-time bundle for lower-level envelope use.
-Messaging adapters must also implement `consumeForSession(accountId, keyId, claimId)`. That
-operation atomically records the stable claim while consuming an active key, succeeds when the
-same claim is retried, and rejects every different claim for that key. Retain the claim tombstone
+Messaging adapters must also implement `reserveForSession(accountId, keyId, claimId)` and
+`consumeForSession(accountId, keyId, claimId)`. Reservation atomically records the stable claim
+without making the private key unavailable; final consumption happens only after the session is
+durable. Both operations succeed when the same claim is retried and reject every different claim
+for that key. Retain the authoritative claim tombstone
 for at least as long as the key can appear in delayed messages or migrated state. The message SDK
-fails closed when this capability is absent, and its durable session journal resumes an ambiguous
-write or process interruption before the session can be used. Last-resort bundles are not consumed.
+fails closed when either capability is absent. Its durable session journal resumes an ambiguous
+write or process interruption before the session can be used, and its encrypted session record
+retains a bounded copy of completed key/claim identifiers to reject reuse before another session
+is committed. Last-resort bundles are not consumed.
 Serialize complete receive operations by local account as an additional host-side control.
 
 ## Transparency and transport

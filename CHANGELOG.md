@@ -15,6 +15,8 @@
 - Require witness quorum members to use distinct keys and prevent the log key from satisfying quorum.
 - Reject ill-formed UTF-16 at cryptographic identifier boundaries and noncanonical framed suite tokens.
 - Resume one-time key consumption with durable session claims after storage or process interruption.
+- Authenticate recovery capsules before receive commits and reserve one-time key claims before a
+  retained private prekey can create another session.
 - Document participant metadata exposure, history-recovery tradeoffs, runtime constraints and
   remaining prerequisites for publication and production use.
 

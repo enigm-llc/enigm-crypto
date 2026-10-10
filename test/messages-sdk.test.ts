@@ -10,13 +10,18 @@ import {
   publicKemBundle,
   utf8,
 } from "../src/index.ts";
-import { encodeBase64 } from "../src/core/base64.ts";
+import { decodeBase64, encodeBase64 } from "../src/core/base64.ts";
 import {
   createEnigmSessionClient,
   createEnigmDeviceClient,
   createEnigmMessageClient,
 } from "../src/sdk/index.ts";
 const random = (length: number) => new Uint8Array(length).fill(7);
+const alterBase64Byte = (value: string): string => {
+  const decoded = decodeBase64(value);
+  decoded[decoded.length - 1] ^= 1;
+  return encodeBase64(decoded);
+};
 const memory = () => {
   const rows = new Map<string, string>();
   const queues = new Map<string, Promise<unknown>>();
@@ -58,6 +63,7 @@ const setup = (settings: { failSessionConsumeOnce?: boolean } = {}) => {
   };
   const consumed: string[] = [];
   const sessionClaims = new Map<string, string>();
+  const finalizedSessionClaims = new Set<string>();
   let sessionConsumeAttempts = 0;
   const device = createEnigmDeviceClient({
     randomSource: random,
@@ -65,6 +71,13 @@ const setup = (settings: { failSessionConsumeOnce?: boolean } = {}) => {
       load: async (id) => structuredClone(material[id as "alice" | "bob"]),
       consume: async (_account, id) => {
         consumed.push(id);
+      },
+      reserveForSession: async (_account, id, claimId) => {
+        const existing = sessionClaims.get(id);
+        if (existing !== undefined && existing !== claimId) {
+          throw new Error("One-time key already claimed by another session");
+        }
+        if (existing === undefined) sessionClaims.set(id, claimId);
       },
       consumeForSession: async (_account, id, claimId) => {
         sessionConsumeAttempts += 1;
@@ -75,8 +88,9 @@ const setup = (settings: { failSessionConsumeOnce?: boolean } = {}) => {
         if (existing !== undefined && existing !== claimId) {
           throw new Error("One-time key already claimed by another session");
         }
-        if (existing === undefined) {
-          sessionClaims.set(id, claimId);
+        if (existing === undefined) sessionClaims.set(id, claimId);
+        if (!finalizedSessionClaims.has(id)) {
+          finalizedSessionClaims.add(id);
           consumed.push(id);
         }
       },
@@ -123,6 +137,7 @@ const setup = (settings: { failSessionConsumeOnce?: boolean } = {}) => {
     get sessionConsumeAttempts() { return sessionConsumeAttempts; },
     senderBinding,
     bob,
+    bobPrekeyId: encodeBase64(material.bob.bundles[0]!.bundle.keyId),
     alice,
     bobBundle: encodeBase64(
       encodePublicKemBundle(publicKemBundle(material.bob.bundles[0]!.bundle))
@@ -238,6 +253,184 @@ test("bootstrap resumes an idempotent one-time key claim before using the commit
   assert.equal(finalized.pendingPrekeyUses, undefined);
   assert.equal(f.sessionConsumeAttempts, 2);
   assert.equal(f.consumed.length, 1);
+});
+
+test("message recovery envelopes authenticate before bootstrap and ratchet commits", async () => {
+  const f = setup();
+  const base = {
+    accountId: "alice",
+    conversationId: "c",
+    senderDeviceId: "alice-device",
+    senderBinding: f.senderBinding,
+    plaintext: utf8("authenticated recovery"),
+    targets: [{
+      userId: "bob",
+      deviceId: "bob-device",
+      encodedIdentity: await f.device.publicIdentityEncoded("bob"),
+      encodedBundle: f.bobBundle,
+      identityKeyId: encodeBase64(f.bob.keyId),
+    }],
+  };
+  const receive = {
+    accountId: "bob",
+    conversationId: "c",
+    currentDeviceId: "bob-device",
+    expectedSenderUserId: "alice",
+  };
+  const first = await f.client.encryptMessage({ ...base, messageId: "one" });
+  for (const field of ["nonce", "ciphertext"] as const) {
+    const altered = structuredClone(first);
+    const recovery = altered.keyPackets[0]!.recoveryContentKey;
+    recovery[field] = alterBase64Byte(recovery[field]);
+    await assert.rejects(
+      f.client.decryptMessage({ ...receive, messageId: "one", encrypted: altered })
+    );
+    assert.equal(f.store.rows.has("bob"), false);
+    assert.equal(f.consumed.length, 0);
+  }
+  assert.deepEqual(
+    await f.client.decryptMessage({ ...receive, messageId: "one", encrypted: first }),
+    base.plaintext
+  );
+
+  const second = await f.client.encryptMessage({
+    ...base,
+    messageId: "two",
+    plaintext: utf8("established recovery"),
+  });
+  const before = f.store.rows.get("bob");
+  for (const field of ["nonce", "ciphertext"] as const) {
+    const altered = structuredClone(second);
+    const recovery = altered.keyPackets[0]!.recoveryContentKey;
+    recovery[field] = alterBase64Byte(recovery[field]);
+    await assert.rejects(
+      f.client.decryptMessage({ ...receive, messageId: "two", encrypted: altered })
+    );
+    assert.equal(f.store.rows.get("bob"), before);
+  }
+  assert.deepEqual(
+    await f.client.decryptMessage({ ...receive, messageId: "two", encrypted: second }),
+    utf8("established recovery")
+  );
+  assert.deepEqual(
+    await f.client.decryptMessage({ ...receive, messageId: "two", encrypted: second }),
+    utf8("established recovery")
+  );
+});
+
+test("direct local packets authenticate recovery before returning plaintext", async () => {
+  const f = setup();
+  const encrypted = await f.client.encryptMessage({
+    accountId: "alice",
+    conversationId: "local",
+    messageId: "one",
+    senderDeviceId: "alice-device",
+    senderBinding: f.senderBinding,
+    plaintext: utf8("local recovery"),
+    targets: [{ userId: "alice", deviceId: "alice-device" }],
+  });
+  const altered = structuredClone(encrypted);
+  altered.keyPackets[0]!.recoveryContentKey.ciphertext = alterBase64Byte(
+    altered.keyPackets[0]!.recoveryContentKey.ciphertext
+  );
+  const before = f.store.rows.get("alice");
+  const input = {
+    accountId: "alice",
+    conversationId: "local",
+    messageId: "one",
+    currentDeviceId: "alice-device",
+    expectedSenderUserId: "alice",
+  };
+  await assert.rejects(f.client.decryptMessage({ ...input, encrypted: altered }));
+  assert.equal(f.store.rows.get("alice"), before);
+  assert.deepEqual(
+    await f.client.decryptMessage({ ...input, encrypted }),
+    utf8("local recovery")
+  );
+});
+
+test("completed one-time key claims reject reuse before writing another session", async () => {
+  const f = setup();
+  const target = {
+    userId: "bob",
+    deviceId: "bob-device",
+    encodedIdentity: await f.device.publicIdentityEncoded("bob"),
+    encodedBundle: f.bobBundle,
+    identityKeyId: encodeBase64(f.bob.keyId),
+  };
+  const encrypt = (conversationId: string) => f.client.encryptMessage({
+    accountId: "alice",
+    conversationId,
+    messageId: "one",
+    senderDeviceId: "alice-device",
+    senderBinding: f.senderBinding,
+    plaintext: utf8(conversationId),
+    targets: [target],
+  });
+  const first = await encrypt("first");
+  await f.client.decryptMessage({
+    accountId: "bob",
+    conversationId: "first",
+    messageId: "one",
+    currentDeviceId: "bob-device",
+    expectedSenderUserId: "alice",
+    encrypted: first,
+  });
+  const before = f.store.rows.get("bob")!;
+  const second = await encrypt("second");
+  await assert.rejects(
+    f.client.decryptMessage({
+      accountId: "bob",
+      conversationId: "second",
+      messageId: "one",
+      currentDeviceId: "bob-device",
+      expectedSenderUserId: "alice",
+      encrypted: second,
+    }),
+    /claimed by another session/
+  );
+  assert.equal(f.store.rows.get("bob"), before);
+  const stored = JSON.parse(before);
+  assert.equal(Object.keys(stored.sessions).length, 1);
+  assert.equal(stored.pendingPrekeyUses, undefined);
+  assert.equal(Object.keys(stored.completedPrekeyClaims).length, 1);
+  const transferred = JSON.parse(
+    await f.sessions.exportTransferState("bob", "bob-device")
+  );
+  assert.deepEqual(transferred.completedPrekeyClaims, stored.completedPrekeyClaims);
+});
+
+test("authoritative reservations protect legacy state without local claim tombstones", async () => {
+  const f = setup();
+  f.sessionClaims.set(f.bobPrekeyId, "f".repeat(64));
+  const encrypted = await f.client.encryptMessage({
+    accountId: "alice",
+    conversationId: "legacy",
+    messageId: "one",
+    senderDeviceId: "alice-device",
+    senderBinding: f.senderBinding,
+    plaintext: utf8("legacy reservation"),
+    targets: [{
+      userId: "bob",
+      deviceId: "bob-device",
+      encodedIdentity: await f.device.publicIdentityEncoded("bob"),
+      encodedBundle: f.bobBundle,
+      identityKeyId: encodeBase64(f.bob.keyId),
+    }],
+  });
+  await assert.rejects(
+    f.client.decryptMessage({
+      accountId: "bob",
+      conversationId: "legacy",
+      messageId: "one",
+      currentDeviceId: "bob-device",
+      expectedSenderUserId: "alice",
+      encrypted,
+    }),
+    /claimed by another session/
+  );
+  assert.equal(f.store.rows.has("bob"), false);
+  assert.equal(f.consumed.length, 0);
 });
 
 test("message SDK rejects altered sender attribution and duplicate targets", async () => {

@@ -7,7 +7,7 @@ test('device SDK selects a live last-resort bundle while retaining expired keys 
  const now=Date.now()+2000;
  const expired=generateKemBundle(identity,now-1000,entropy);
  const active=generateKemBundle(identity,now+10000,length=>new Uint8Array(length).fill(9));
- const client=createEnigmDeviceClient({randomSource:entropy,now:()=>now,store:{load:async()=>structuredClone({identity,bundles:[{bundle:expired,lastResort:true},{bundle:active,lastResort:true}]}),consume:async()=>{throw new Error('last resort must not be consumed');},consumeForSession:async()=>{throw new Error('last resort must not be consumed');}}});
+ const client=createEnigmDeviceClient({randomSource:entropy,now:()=>now,store:{load:async()=>structuredClone({identity,bundles:[{bundle:expired,lastResort:true},{bundle:active,lastResort:true}]}),consume:async()=>{throw new Error('last resort must not be consumed');},reserveForSession:async()=>{throw new Error('last resort must not be reserved');},consumeForSession:async()=>{throw new Error('last resort must not be consumed');}}});
  assert.equal(await client.publicLastResortBundleEncoded('alice'),encodeBase64(encodePublicKemBundle(publicKemBundle(active))));
 });
 
@@ -20,6 +20,7 @@ test('device SDK bounds encoded public keys and envelopes before wire decoding',
  await assert.rejects(client.sealSession('alice',oversizedPublic,'',Uint8Array.of(1),Uint8Array.of(2)),/too large/);
  const oversizedEnvelope=encodeBase64(new Uint8Array(2*1024*1024+1));
  await assert.rejects(client.openSessionEncodedPending('alice','',oversizedEnvelope,Uint8Array.of(2)),/too large/);
+ await assert.rejects(client.reserveOpenedSessionKeyForSession('alice','key','claim'),/idempotent session reservations/);
  await assert.rejects(client.consumeOpenedSessionKeyForSession('alice','key','claim'),/idempotent session claims/);
  assert.equal(consumed,false);
  assert.ok(identity.mlDsaSecretKey.some(byte=>byte!==0));

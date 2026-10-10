@@ -147,6 +147,17 @@ export const createEnigmDeviceClient = (options: {
       assertWellFormedUtf16(accountId, "Device account identifier");
       return options.store.consume(accountId, keyId);
     },
+    reserveOpenedSessionKeyForSession: async (
+      accountId: string,
+      keyId: string,
+      claimId: string
+    ) => {
+      assertWellFormedUtf16(accountId, "Device account identifier");
+      if (!options.store.reserveForSession) {
+        throw new Error("The device key store does not support idempotent session reservations.");
+      }
+      await options.store.reserveForSession(accountId, keyId, claimId);
+    },
     consumeOpenedSessionKeyForSession: async (
       accountId: string,
       keyId: string,

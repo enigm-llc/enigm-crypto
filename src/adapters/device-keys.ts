@@ -9,8 +9,14 @@ export interface DeviceKeyStore {
   }>;
   consume(accountId: string, keyId: string): Promise<void>;
   /**
-   * Atomically consumes a one-time key for a stable session claim.
-   * Repeating the same claim must succeed; a different claim for the key must fail.
+   * Atomically reserves an active one-time key for a stable session claim without
+   * making its private material unavailable. Repeating the same claim must
+   * succeed; a different claim for the key must fail.
+   */
+  reserveForSession?(accountId: string, keyId: string, claimId: string): Promise<void>;
+  /**
+   * Finalizes consumption for a reserved stable session claim. Repeating the
+   * same claim must succeed; a different claim for the key must fail.
    */
   consumeForSession?(accountId: string, keyId: string, claimId: string): Promise<void>;
 }

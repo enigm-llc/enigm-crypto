@@ -57,6 +57,7 @@ const runSdk = async (): Promise<void> => {
   };
   let consumed = 0;
   const sessionClaims = new Map<string, string>();
+  const finalizedSessionClaims = new Set<string>();
   const device = api.createEnigmDeviceClient({randomSource:entropy, now:()=>2_000_000_000_000,store:{
     load: (id: string) => {
       const identity = id === 'alice' ? sdkAlice : sdkBob;
@@ -64,10 +65,17 @@ const runSdk = async (): Promise<void> => {
       return Promise.resolve({identity:{...identity,mlDsaSecretKey:identity.mlDsaSecretKey.slice(),ed25519SecretKey:identity.ed25519SecretKey.slice()},bundles:[{lastResort:id==='alice',bundle:{...bundle,mlKemSecretKey:bundle.mlKemSecretKey.slice(),x25519SecretKey:bundle.x25519SecretKey.slice()}}]});
     },
     consume:()=>{ consumed++; return Promise.resolve(); },
+    reserveForSession:(_accountId:string,keyId:string,claimId:string)=>{
+      const current=sessionClaims.get(keyId);
+      if(current!==undefined&&current!==claimId)return Promise.reject(new Error('One-time key already claimed'));
+      if(current===undefined)sessionClaims.set(keyId,claimId);
+      return Promise.resolve();
+    },
     consumeForSession:(_accountId:string,keyId:string,claimId:string)=>{
       const current=sessionClaims.get(keyId);
       if(current!==undefined&&current!==claimId)return Promise.reject(new Error('One-time key already claimed'));
-      if(current===undefined){sessionClaims.set(keyId,claimId);consumed++;}
+      if(current===undefined)sessionClaims.set(keyId,claimId);
+      if(!finalizedSessionClaims.has(keyId)){finalizedSessionClaims.add(keyId);consumed++;}
       return Promise.resolve();
     },
   }});
