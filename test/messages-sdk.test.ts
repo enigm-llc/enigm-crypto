@@ -144,6 +144,37 @@ const setup = (settings: { failSessionConsumeOnce?: boolean } = {}) => {
     ),
   };
 };
+const bootstrapMessageInput = async (f: ReturnType<typeof setup>, plaintext: string) => {
+  const encrypted = await f.client.encryptMessage({
+    accountId: "alice",
+    conversationId: "c",
+    messageId: "m",
+    senderDeviceId: "alice-device",
+    senderBinding: f.senderBinding,
+    plaintext: utf8(plaintext),
+    targets: [{
+      userId: "bob",
+      deviceId: "bob-device",
+      encodedIdentity: await f.device.publicIdentityEncoded("bob"),
+      encodedBundle: f.bobBundle,
+      identityKeyId: encodeBase64(f.bob.keyId),
+    }],
+  });
+  return {
+    accountId: "bob",
+    conversationId: "c",
+    messageId: "m",
+    currentDeviceId: "bob-device",
+    expectedSenderUserId: "alice",
+    encrypted,
+  };
+};
+const recreateMessageClient = (f: ReturnType<typeof setup>) => createEnigmMessageClient({
+  device: f.device,
+  sessions: createEnigmSessionClient({ store: f.store, randomSource: random }),
+  randomSource: random,
+  logPublicKey: encodeBase64(ed25519.getPublicKey(new Uint8Array(32).fill(11))),
+});
 test("message SDK round-trips sender-local, bootstrap and established-session packets", async () => {
   const f = setup();
   const targets = [
@@ -569,11 +600,10 @@ for (const mode of ['after-consume','before-marker-clear','after-marker-clear'])
    await write(id,value);
    if(clearing&&mode==='after-marker-clear'&&fail){fail=false;throw new Error('injected ambiguous clear');}
   };
-  const encrypted=await f.client.encryptMessage({accountId:'alice',conversationId:'c',messageId:'m',senderDeviceId:'alice-device',senderBinding:f.senderBinding,plaintext:utf8('restart'),targets:[{userId:'bob',deviceId:'bob-device',encodedIdentity:await f.device.publicIdentityEncoded('bob'),encodedBundle:f.bobBundle,identityKeyId:encodeBase64(f.bob.keyId)}]});
-  const input={accountId:'bob',conversationId:'c',messageId:'m',currentDeviceId:'bob-device',expectedSenderUserId:'alice',encrypted};
+  const input = await bootstrapMessageInput(f, "restart");
   await assert.rejects(f.client.decryptMessage(input),/injected/);
   f.device.openSessionEncodedPending=async()=>{throw new Error('consumed private key no longer exists');};
-  const restarted=createEnigmMessageClient({device:f.device,sessions:createEnigmSessionClient({store:f.store,randomSource:random}),randomSource:random,logPublicKey:encodeBase64(ed25519.getPublicKey(new Uint8Array(32).fill(11)))});
+  const restarted = recreateMessageClient(f);
   assert.deepEqual(await restarted.decryptMessage(input),utf8('restart'));
   assert.equal(f.consumed.length,1);
   assert.equal(JSON.parse(f.store.rows.get('bob')!).pendingPrekeyUses,undefined);
@@ -600,39 +630,12 @@ for (const mode of ["reservation-after-write", "session-before-write"]) {
       }
       await write(id, value);
     };
-    const encrypted = await f.client.encryptMessage({
-      accountId: "alice",
-      conversationId: "c",
-      messageId: "m",
-      senderDeviceId: "alice-device",
-      senderBinding: f.senderBinding,
-      plaintext: utf8("restart"),
-      targets: [{
-        userId: "bob",
-        deviceId: "bob-device",
-        encodedIdentity: await f.device.publicIdentityEncoded("bob"),
-        encodedBundle: f.bobBundle,
-        identityKeyId: encodeBase64(f.bob.keyId),
-      }],
-    });
-    const input = {
-      accountId: "bob",
-      conversationId: "c",
-      messageId: "m",
-      currentDeviceId: "bob-device",
-      expectedSenderUserId: "alice",
-      encrypted,
-    };
+    const input = await bootstrapMessageInput(f, "restart");
     await assert.rejects(f.client.decryptMessage(input), /Injected/);
     assert.equal(f.store.rows.has("bob"), false);
     assert.equal(f.consumed.length, 0);
     assert.equal(f.sessionClaims.size, 1);
-    const restarted = createEnigmMessageClient({
-      device: f.device,
-      sessions: createEnigmSessionClient({ store: f.store, randomSource: random }),
-      randomSource: random,
-      logPublicKey: encodeBase64(ed25519.getPublicKey(new Uint8Array(32).fill(11))),
-    });
+    const restarted = recreateMessageClient(f);
     assert.deepEqual(await restarted.decryptMessage(input), utf8("restart"));
     assert.equal(f.consumed.length, 1);
     assert.equal(JSON.parse(f.store.rows.get("bob")!).pendingPrekeyUses, undefined);
@@ -641,29 +644,7 @@ for (const mode of ["reservation-after-write", "session-before-write"]) {
 
 test("legacy pending bootstrap reserves its claim before retrying with a strict key store", async () => {
   const f = setup({ failSessionConsumeOnce: true });
-  const encrypted = await f.client.encryptMessage({
-    accountId: "alice",
-    conversationId: "c",
-    messageId: "m",
-    senderDeviceId: "alice-device",
-    senderBinding: f.senderBinding,
-    plaintext: utf8("legacy pending"),
-    targets: [{
-      userId: "bob",
-      deviceId: "bob-device",
-      encodedIdentity: await f.device.publicIdentityEncoded("bob"),
-      encodedBundle: f.bobBundle,
-      identityKeyId: encodeBase64(f.bob.keyId),
-    }],
-  });
-  const input = {
-    accountId: "bob",
-    conversationId: "c",
-    messageId: "m",
-    currentDeviceId: "bob-device",
-    expectedSenderUserId: "alice",
-    encrypted,
-  };
+  const input = await bootstrapMessageInput(f, "legacy pending");
   await assert.rejects(f.client.decryptMessage(input), /key store failure/);
   // Older clients persisted the pending journal before any authoritative reservation.
   f.sessionClaims.clear();
@@ -675,12 +656,7 @@ test("legacy pending bootstrap reserves its claim before retrying with a strict 
   f.device.openSessionEncodedPending = async () => {
     throw new Error("Pending recovery must use the committed session");
   };
-  const restarted = createEnigmMessageClient({
-    device: f.device,
-    sessions: createEnigmSessionClient({ store: f.store, randomSource: random }),
-    randomSource: random,
-    logPublicKey: encodeBase64(ed25519.getPublicKey(new Uint8Array(32).fill(11))),
-  });
+  const restarted = recreateMessageClient(f);
   assert.deepEqual(await restarted.decryptMessage(input), utf8("legacy pending"));
   assert.equal(f.consumed.length, 1);
   assert.equal(JSON.parse(f.store.rows.get("bob")!).pendingPrekeyUses, undefined);
