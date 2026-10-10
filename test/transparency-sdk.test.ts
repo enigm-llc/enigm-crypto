@@ -54,6 +54,26 @@ test("identity binding remains bound to the exact account and device JSON transc
       }),
     /IDENTITY_BINDING_MISMATCH/
   );
+  const malformed = { ...row, expectedAccountId: "cuenta\ud800" };
+  const malformedSignature = encodeBase64(
+    ed25519.sign(
+      utf8(
+        JSON.stringify([
+          "enigm-key-transparency-binding-v2",
+          malformed.expectedAccountId,
+          malformed.expectedDeviceId,
+          malformed.identityKeyId,
+          malformed.accountCommitment,
+          malformed.deviceCommitment,
+        ])
+      ),
+      secret
+    )
+  );
+  assert.throws(
+    () => verifier.verifyIdentityBinding({ ...malformed, bindingSignature: malformedSignature }),
+    /IDENTITY_BINDING_MISMATCH/
+  );
 });
 
 import { buildProof } from "./fixtures/transparency.ts";

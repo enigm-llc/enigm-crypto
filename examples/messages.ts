@@ -18,6 +18,7 @@ const material = {
   bob: { identity: bob, bundles: [{ bundle: generateKemBundle(bob, expiry, randomSource), lastResort: false }] },
 };
 const consumed = new Set<string>();
+const sessionClaims = new Map<string, string>();
 const device = createEnigmDeviceClient({
   randomSource,
   store: {
@@ -30,6 +31,18 @@ const device = createEnigmDeviceClient({
       const key = `${accountId}:${keyId}`;
       if (consumed.has(key)) return Promise.reject(new Error('One-time key already consumed'));
       consumed.add(key);
+      return Promise.resolve();
+    },
+    consumeForSession: (accountId, keyId, claimId) => {
+      const key = `${accountId}:${keyId}`;
+      const existing = sessionClaims.get(key);
+      if (existing !== undefined && existing !== claimId) {
+        return Promise.reject(new Error('One-time key already claimed by another session'));
+      }
+      if (existing === undefined) {
+        sessionClaims.set(key, claimId);
+        consumed.add(key);
+      }
       return Promise.resolve();
     },
   },

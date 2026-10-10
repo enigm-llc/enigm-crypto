@@ -139,6 +139,39 @@ test("failed session persistence leaves durable ratchet unchanged", async () => 
   assert.equal(rows.get("alice"), before);
 });
 
+test("a one-time key cannot be pending for two sessions", async () => {
+  const rows = new Map<string, string>();
+  const store = {
+    read: async (id: string) => rows.get(id) ?? null,
+    write: async (id: string, value: string) => { rows.set(id, value); },
+    delete: async (id: string) => { rows.delete(id); },
+    exclusive: async <T>(_id: string, action: () => Promise<T>) => action(),
+  };
+  const client = createEnigmSessionClient({ store, randomSource: entropy });
+  const rootKey = new Uint8Array(32).fill(8);
+  const context = utf8("pending prekey uniqueness");
+  const sender = {
+    accountId: "alice",
+    deviceId: "alice-device",
+    identityKeyId: encodeBase64(new Uint8Array(32).fill(9)),
+  };
+  const keyId = encodeBase64(new Uint8Array(32).fill(5));
+  const first = { keyId, claimId: "a".repeat(64) };
+  await client.initializeOrVerifySession(
+    "bob", "session-a", rootKey, context, "responder", sender, first
+  );
+  await assert.rejects(
+    client.initializeOrVerifySession(
+      "bob", "session-b", rootKey, context, "responder", sender,
+      { keyId, claimId: "b".repeat(64) }
+    ),
+    /already pending for another session/
+  );
+  assert.deepEqual(await client.pendingPrekeyUse("bob", "session-a"), first);
+  assert.equal(await client.pendingPrekeyUse("bob", "session-b"), null);
+  assert.equal(await client.hasSession("bob", "session-b"), false);
+});
+
 test('attachment size limits reject before entropy and bound authenticated decoding', () => {
  let calls=0;const random=(length:number)=>{calls++;return entropy(length);};
  assert.throws(()=>encryptEnigmAttachment(Uint8Array.of(1,2),random,{maximumPlaintextBytes:1}),/size limit/);

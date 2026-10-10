@@ -12,6 +12,9 @@
 - Bound decoded SDK wire objects, message sizes and recipient packet counts before expensive work.
 - Reject ambiguous delimiter-bearing SDK protocol identifiers without changing valid wire bytes.
 - Count only witness signatures within the configured freshness window for new trust.
+- Require witness quorum members to use distinct keys and prevent the log key from satisfying quorum.
+- Reject ill-formed UTF-16 at cryptographic identifier boundaries and noncanonical framed suite tokens.
+- Resume one-time key consumption with durable session claims after storage or process interruption.
 - Document participant metadata exposure, history-recovery tradeoffs, runtime constraints and
   remaining prerequisites for publication and production use.
 

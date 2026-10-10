@@ -1,4 +1,3 @@
-import { decodeUtf8 } from '../core/utf8.js';
 import { gcm } from '@noble/ciphers/aes.js';
 import { x25519 } from '@noble/curves/ed25519.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
@@ -155,10 +154,10 @@ export const decodeSealedSenderEnvelope = (encoded: Uint8Array): SealedSenderEnv
   if (!equal(reader.read(WIRE_MAGIC.length, WIRE_MAGIC.length), WIRE_MAGIC)) {
     throw new Error('Invalid sealed sender object magic.');
   }
-  if (decodeUtf8(reader.read(2)) !== String(PROTOCOL_VERSION)) {
+  if (!equal(reader.read(2), utf8(String(PROTOCOL_VERSION)))) {
     throw new Error('Unsupported sealed sender protocol version.');
   }
-  if (decodeUtf8(reader.read(128)) !== CIPHER_SUITE) {
+  if (!equal(reader.read(128), utf8(CIPHER_SUITE))) {
     throw new Error('Unsupported sealed sender cipher suite.');
   }
   const flags = {

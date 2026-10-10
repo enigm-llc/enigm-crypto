@@ -1,5 +1,6 @@
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { utf8 } from "../../core/bytes.js";
+import { assertWellFormedUtf16 } from "../../core/utf8.js";
 import { decodeBase64 } from "../../core/base64.js";
 import { KeyTransparencyErrorEnigmV2 } from "./errors.js";
 export type EnigmIdentityBindingInput = {
@@ -15,6 +16,8 @@ export const verifyEnigmIdentityBinding = (
   logPublicKey: string
 ): void => {
   try {
+    assertWellFormedUtf16(input.expectedAccountId, "Identity binding account identifier");
+    assertWellFormedUtf16(input.expectedDeviceId, "Identity binding device identifier");
     const signature = decodeBase64(input.bindingSignature, 64);
     const publicKey = decodeBase64(logPublicKey, 32);
     for (const field of [input.identityKeyId, input.accountCommitment, input.deviceCommitment]) {
