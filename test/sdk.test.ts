@@ -187,3 +187,44 @@ test('attachment size limits reject before entropy and bound authenticated decod
  const oversized=encryptEnigmAttachment(Uint8Array.of(1,2,3),entropy);
  assert.throws(()=>decryptEnigmAttachment(oversized.encrypted,oversized.fileKey,undefined,{maximumPlaintextBytes:2}),/too large/);
 });
+
+test("bootstrap accepts legacy sender attribution and options in its seventh argument", async () => {
+  const rows = new Map<string, string>();
+  const client = createEnigmSessionClient({
+    randomSource: entropy,
+    store: {
+      read: async (id) => rows.get(id) ?? null,
+      write: async (id, value) => { rows.set(id, value); },
+      delete: async (id) => { rows.delete(id); },
+      exclusive: async (_id, operation) => operation(),
+    },
+  });
+  const context = utf8("bootstrap compatibility");
+  const sender = {
+    accountId: "alice",
+    deviceId: "alice-device",
+    identityKeyId: encodeBase64(entropy(32)),
+  };
+  await client.initializeSession("alice", "id", entropy(32), context, "initiator");
+  const encrypted = await client.encrypt("alice", "id", utf8("message"), context);
+  for (const [accountId, options] of [
+    ["legacy", sender],
+    ["options", { sender }],
+  ] as const) {
+    const opened = await client.bootstrapDecryptAndCommit(
+      accountId,
+      "id",
+      entropy(32),
+      encrypted,
+      context,
+      (plaintext) => new Uint8Array(plaintext),
+      options
+    );
+    assert.deepEqual(opened, utf8("message"));
+    await client.assertSessionSender(accountId, "id", "alice", "alice-device");
+    await assert.rejects(
+      client.assertSessionSender(accountId, "id", "mallory", "alice-device"),
+      /attribution/
+    );
+  }
+});

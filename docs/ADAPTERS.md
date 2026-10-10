@@ -34,8 +34,10 @@ Do not return references to the adapter's persistent or shared in-memory keys.
 Messaging adapters must also implement `reserveForSession(accountId, keyId, claimId)` and
 `consumeForSession(accountId, keyId, claimId)`. Reservation atomically records the stable claim
 without making the private key unavailable; final consumption happens only after the session is
-durable. Both operations succeed when the same claim is retried and reject every different claim
-for that key. Retain the authoritative claim tombstone
+durable. Both operations succeed when the same claim is retried, including reservation after
+consumption, and reject every different claim for that key. Consumption requires a matching
+reservation; journal recovery repeats reservation before consumption so pending records from
+older clients can resume. Retain the authoritative claim tombstone
 for at least as long as the key can appear in delayed messages or migrated state. The message SDK
 fails closed when either capability is absent. Its durable session journal resumes an ambiguous
 write or process interruption before the session can be used, and its encrypted session record

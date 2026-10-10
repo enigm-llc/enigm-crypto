@@ -103,6 +103,11 @@ export const createEnigmMessageClient = (options: {
   ): Promise<void> => {
     const pending = await options.sessions.pendingPrekeyUse(accountId, sessionId);
     if (!pending) return;
+    await options.device.reserveOpenedSessionKeyForSession(
+      accountId,
+      pending.keyId,
+      pending.claimId
+    );
     await options.device.consumeOpenedSessionKeyForSession(
       accountId,
       pending.keyId,
@@ -553,15 +558,15 @@ export const createEnigmMessageClient = (options: {
             identityKeyId: packet.senderIdentityKeyId!,
           },
           ...(pending ? { pendingPrekeyUse: pending } : {}),
-        },
-        {
-          recovery: packet.recoveryContentKey,
-          context: recoveryContext(
-            input.conversationId,
-            input.messageId,
-            packet.senderDeviceId,
-            packet.recipientDeviceId
-          ),
+          recoveryAuthentication: {
+            recovery: packet.recoveryContentKey,
+            context: recoveryContext(
+              input.conversationId,
+              input.messageId,
+              packet.senderDeviceId,
+              packet.recipientDeviceId
+            ),
+          },
         }
       );
       await completePendingPrekeyUse(input.accountId, packet.sessionId);

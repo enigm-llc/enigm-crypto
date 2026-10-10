@@ -33,8 +33,10 @@ Use trusted configuration, never log keys supplied in an untrusted message.
 persist a session must reserve a stable claim with `reserveOpenedSessionKeyForSession`, write a
 durable pending record, then call `consumeOpenedSessionKeyForSession`; the message client implements
 this flow. Reservation keeps the private key available for an interrupted same-claim retry while
-rejecting a different claim before another session is written. A retry completes final consumption
-before the session is used.
+rejecting a different claim before another session is written. A retry repeats the same reservation
+and completes final consumption before the session is used, including for pending records written
+by older clients before reservations were introduced. Repeating a reservation after consumption
+must also succeed for the same claim.
 Completed claims remain as bounded tombstones in the encrypted session record, so retained private
 prekeys cannot establish a different session after consumption. These tombstones contain only key
 and claim identifiers and are included in exported device-transfer state, which the host must

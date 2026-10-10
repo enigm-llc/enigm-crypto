@@ -61,6 +61,7 @@ export type PendingPrekeyUseEnigmV2 = { keyId: string; claimId: string };
 export type BootstrapSessionOptionsEnigmV2 = {
   sender?: EnigmSessionSender;
   pendingPrekeyUse?: PendingPrekeyUseEnigmV2;
+  recoveryAuthentication?: RecoveryAuthenticationEnigmV2;
 };
 export type RecoveryAuthenticationEnigmV2 = {
   recovery: EncodedRecoveryContentKeyEnigmV2;
@@ -290,6 +291,13 @@ const validateStoredPendingPrekeys = (state: StoredMessagingCryptoEnigmV2): void
       pendingClaims.set(pending.keyId, pending.claimId);
     }
   }
+  validateStoredCompletedPrekeyClaims(state, pendingClaims);
+};
+
+const validateStoredCompletedPrekeyClaims = (
+  state: StoredMessagingCryptoEnigmV2,
+  pendingClaims: ReadonlyMap<string, string>
+): void => {
   if (state.completedPrekeyClaims !== undefined) {
     if (!state.completedPrekeyClaims || typeof state.completedPrekeyClaims !== 'object' || Array.isArray(state.completedPrekeyClaims) || Object.keys(state.completedPrekeyClaims).length > MAX_SESSIONS)
       throw new Error('Invalid EnigmV2 completed one-time key claim storage.');
@@ -974,11 +982,10 @@ class MessagingCryptoManagerEnigmV2 {
     message: EncodedRatchetMessageEnigmV2,
     context: Uint8Array,
     authenticate: (plaintext: Uint8Array) => T | Promise<T>,
-    options?: EnigmSessionSender | BootstrapSessionOptionsEnigmV2,
-    recoveryAuthentication?: RecoveryAuthenticationEnigmV2
+    options?: EnigmSessionSender | BootstrapSessionOptionsEnigmV2
   ): Promise<T> {
-    const { sender, pendingPrekeyUse } = options && "accountId" in options
-      ? { sender: options, pendingPrekeyUse: undefined }
+    const { sender, pendingPrekeyUse, recoveryAuthentication } = options && "accountId" in options
+      ? { sender: options, pendingPrekeyUse: undefined, recoveryAuthentication: undefined }
       : options ?? {};
     return this.exclusive(accountId, async () => {
       if (sender) validateSender(sender);

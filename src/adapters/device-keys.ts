@@ -11,7 +11,7 @@ export interface DeviceKeyStore {
   /**
    * Atomically reserves an active one-time key for a stable session claim without
    * making its private material unavailable. Repeating the same claim must
-   * succeed; a different claim for the key must fail.
+   * succeed, including after consumption; a different claim for the key must fail.
    */
   reserveForSession?(accountId: string, keyId: string, claimId: string): Promise<void>;
   /**
