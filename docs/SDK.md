@@ -30,9 +30,17 @@ Identity binding alone does not prove current active membership or witness quoru
 Use trusted configuration, never log keys supplied in an untrusted message.
 
 `device.openSessionEncodedPending` opens without consuming a one-time key. Low-level callers that
-persist a session must use `consumeOpenedSessionKeyForSession` with a stable claim and a durable
-pending record; the message client implements this flow. Its session record and pending claim are
-persisted together, and a retry completes the adapter's idempotent claim before the session is used.
+persist a session must reserve a stable claim with `reserveOpenedSessionKeyForSession`, write a
+durable pending record, then call `consumeOpenedSessionKeyForSession`; the message client implements
+this flow. Reservation keeps the private key available for an interrupted same-claim retry while
+rejecting a different claim before another session is written. A retry repeats the same reservation
+and completes final consumption before the session is used, including for pending records written
+by older clients before reservations were introduced. Repeating a reservation after consumption
+must also succeed for the same claim.
+Completed claims remain as bounded tombstones in the encrypted session record, so retained private
+prekeys cannot establish a different session after consumption. These tombstones contain only key
+and claim identifiers and are included in exported device-transfer state, which the host must
+authenticate and encrypt.
 Transfers fail closed while a claim is pending. `consumeOpenedSessionKey` remains only for
 lower-level envelope use that does not persist a session.
 Session methods also expose recovery, transfer state and group epoch operations.

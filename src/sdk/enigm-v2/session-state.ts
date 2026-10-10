@@ -61,6 +61,11 @@ export type PendingPrekeyUseEnigmV2 = { keyId: string; claimId: string };
 export type BootstrapSessionOptionsEnigmV2 = {
   sender?: EnigmSessionSender;
   pendingPrekeyUse?: PendingPrekeyUseEnigmV2;
+  recoveryAuthentication?: RecoveryAuthenticationEnigmV2;
+};
+export type RecoveryAuthenticationEnigmV2 = {
+  recovery: EncodedRecoveryContentKeyEnigmV2;
+  context: Uint8Array;
 };
 export type EnigmSessionSender = { accountId: string; deviceId: string; identityKeyId: string };
 const validateSender = (sender: EnigmSessionSender): void => {
@@ -86,6 +91,7 @@ type StoredMessagingCryptoEnigmV2 = {
   sessions: Record<string, EncodedSession>;
   sessionSenders?: Record<string, EnigmSessionSender>;
   pendingPrekeyUses?: Record<string, PendingPrekeyUseEnigmV2>;
+  completedPrekeyClaims?: Record<string, string>;
   groups: Record<string, EncodedGroup>;
   historicalDeviceIds: string[];
 };
@@ -158,6 +164,10 @@ const assertPendingPrekeyAvailable = (
   pending: PendingPrekeyUseEnigmV2
 ): void => {
   validatePendingPrekeyUse(pending);
+  const completedClaim = stored.completedPrekeyClaims?.[pending.keyId];
+  if (completedClaim !== undefined && completedClaim !== pending.claimId) {
+    throw new Error("EnigmV2 one-time key was claimed by another session.");
+  }
   for (const [key, current] of Object.entries(stored.pendingPrekeyUses ?? {})) {
     if (key === sessionKey) {
       if (current.keyId !== pending.keyId || current.claimId !== pending.claimId) {
@@ -166,6 +176,33 @@ const assertPendingPrekeyAvailable = (
     } else if (current.keyId === pending.keyId) {
       throw new Error("EnigmV2 one-time key is already pending for another session.");
     }
+  }
+};
+
+const authenticateRecovery = (
+  session: SessionState,
+  expectedContentKey: Uint8Array,
+  authentication?: RecoveryAuthenticationEnigmV2
+): void => {
+  if (!authentication) return;
+  const recoveryKey = deriveExportKey(session.rootKey, authentication.context);
+  let recovered: Uint8Array | undefined;
+  try {
+    recovered = decryptContent(
+      recoveryKey,
+      {
+        version: authentication.recovery.version,
+        nonce: bytes(authentication.recovery.nonce, 12),
+        ciphertext: bytes(authentication.recovery.ciphertext, 48),
+      },
+      authentication.context
+    );
+    if (!equal(recovered, expectedContentKey)) {
+      throw new Error("EnigmV2 recovery content key does not match the message.");
+    }
+  } finally {
+    if (recovered) wipe(recovered);
+    wipe(recoveryKey);
   }
 };
 
@@ -241,17 +278,35 @@ const validateStoredSenders = (state: StoredMessagingCryptoEnigmV2): void => {
   }
 };
 const validateStoredPendingPrekeys = (state: StoredMessagingCryptoEnigmV2): void => {
+  const pendingClaims = new Map<string, string>();
   if (state.pendingPrekeyUses !== undefined) {
     if (!state.pendingPrekeyUses || typeof state.pendingPrekeyUses !== 'object' || Array.isArray(state.pendingPrekeyUses) || Object.keys(state.pendingPrekeyUses).length > MAX_SESSIONS)
       throw new Error('Invalid EnigmV2 pending one-time key storage.');
-    const keyIds = new Set<string>();
     for (const [key, pending] of Object.entries(state.pendingPrekeyUses)) {
       if (!/^[0-9a-f]{64}$/u.test(key) || !Object.hasOwn(state.sessions, key))
         throw new Error('Orphaned EnigmV2 pending one-time key use.');
       validatePendingPrekeyUse(pending);
-      if (keyIds.has(pending.keyId))
+      if (pendingClaims.has(pending.keyId))
         throw new Error('Duplicate EnigmV2 pending one-time key use.');
-      keyIds.add(pending.keyId);
+      pendingClaims.set(pending.keyId, pending.claimId);
+    }
+  }
+  validateStoredCompletedPrekeyClaims(state, pendingClaims);
+};
+
+const validateStoredCompletedPrekeyClaims = (
+  state: StoredMessagingCryptoEnigmV2,
+  pendingClaims: ReadonlyMap<string, string>
+): void => {
+  if (state.completedPrekeyClaims !== undefined) {
+    if (!state.completedPrekeyClaims || typeof state.completedPrekeyClaims !== 'object' || Array.isArray(state.completedPrekeyClaims) || Object.keys(state.completedPrekeyClaims).length > MAX_SESSIONS)
+      throw new Error('Invalid EnigmV2 completed one-time key claim storage.');
+    for (const [keyId, claimId] of Object.entries(state.completedPrekeyClaims)) {
+      validatePendingPrekeyUse({ keyId, claimId });
+      const pendingClaim = pendingClaims.get(keyId);
+      if (pendingClaim !== undefined && pendingClaim !== claimId) {
+        throw new Error('Conflicting EnigmV2 one-time key claim storage.');
+      }
     }
   }
 };
@@ -406,6 +461,12 @@ class MessagingCryptoManagerEnigmV2 {
       if (current.keyId !== expected.keyId || current.claimId !== expected.claimId) {
         throw new Error("EnigmV2 pending one-time key claim mismatch.");
       }
+      const completedClaim = stored.completedPrekeyClaims?.[current.keyId];
+      if (completedClaim !== undefined && completedClaim !== current.claimId) {
+        throw new Error("EnigmV2 one-time key was claimed by another session.");
+      }
+      stored.completedPrekeyClaims ??= {};
+      stored.completedPrekeyClaims[current.keyId] = current.claimId;
       delete stored.pendingPrekeyUses![stateKey(id)];
       if (Object.keys(stored.pendingPrekeyUses!).length === 0) {
         delete stored.pendingPrekeyUses;
@@ -788,6 +849,11 @@ class MessagingCryptoManagerEnigmV2 {
       }
       assertTransferEntries(current.sessions, transferred.sessions, 'messaging session');
       assertTransferEntries(current.groups, transferred.groups, 'group state');
+      assertTransferEntries(
+        current.completedPrekeyClaims ?? {},
+        transferred.completedPrekeyClaims ?? {},
+        'completed one-time key claim'
+      );
       for (const [key, sender] of Object.entries(current.sessionSenders ?? {})) {
         const other = transferred.sessionSenders?.[key];
         if (other && (sender.accountId !== other.accountId || sender.deviceId !== other.deviceId || sender.identityKeyId !== other.identityKeyId))
@@ -802,6 +868,10 @@ class MessagingCryptoManagerEnigmV2 {
           current.recoveryKeyInitialized || transferred.recoveryKeyInitialized,
         sessions: { ...transferred.sessions, ...current.sessions },
         sessionSenders: { ...transferred.sessionSenders, ...current.sessionSenders },
+        completedPrekeyClaims: {
+          ...transferred.completedPrekeyClaims,
+          ...current.completedPrekeyClaims,
+        },
         groups: { ...transferred.groups, ...current.groups },
         historicalDeviceIds: [
           ...new Set([
@@ -867,7 +937,8 @@ class MessagingCryptoManagerEnigmV2 {
     message: EncodedRatchetMessageEnigmV2,
     context: Uint8Array,
     authenticate: (plaintext: Uint8Array) => T | Promise<T>,
-    expectedSender?: { accountId: string; deviceId: string }
+    expectedSender?: { accountId: string; deviceId: string },
+    recoveryAuthentication?: RecoveryAuthenticationEnigmV2
   ): Promise<T> {
     return this.exclusive(accountId, async () => {
       const stored = await this.load(accountId);
@@ -878,28 +949,10 @@ class MessagingCryptoManagerEnigmV2 {
       if (!encoded)
         throw new Error("EnigmV2 messaging session is unavailable.");
       const session = decodeSession(encoded);
-      const wire: RatchetCiphertext = {
-        version: message.version,
-        chainId: bytes(message.chainId),
-        counter: message.counter,
-        nonce: bytes(message.nonce),
-        ciphertext: bytes(message.ciphertext),
-      };
-      let next: SessionState | undefined;
-      let plaintext: Uint8Array | undefined;
-      try {
-        const decrypted = sessionDecrypt(session, wire, context);
-        next = decrypted.next;
-        plaintext = decrypted.plaintext;
-        const authenticated = await authenticate(plaintext);
-        stored.sessions[key] = encodeSession(next);
-        await this.persist(accountId, stored);
-        return authenticated;
-      } finally {
-        if (plaintext) wipe(plaintext);
-        if (next) wipeSession(next);
-        wipeSession(session);
-      }
+      return this.commitAuthenticatedSession(
+        accountId, stored, key, session, message, context,
+        { authenticate, recoveryAuthentication }
+      );
     });
   }
 
@@ -912,8 +965,8 @@ class MessagingCryptoManagerEnigmV2 {
     authenticate: (plaintext: Uint8Array) => T | Promise<T>,
     options?: EnigmSessionSender | BootstrapSessionOptionsEnigmV2
   ): Promise<T> {
-    const { sender, pendingPrekeyUse } = options && "accountId" in options
-      ? { sender: options, pendingPrekeyUse: undefined }
+    const { sender, pendingPrekeyUse, recoveryAuthentication } = options && "accountId" in options
+      ? { sender: options, pendingPrekeyUse: undefined, recoveryAuthentication: undefined }
       : options ?? {};
     return this.exclusive(accountId, async () => {
       if (sender) validateSender(sender);
@@ -932,6 +985,30 @@ class MessagingCryptoManagerEnigmV2 {
         throw new Error("EnigmV2 session capacity reached.");
       }
       const session = initializeSession(rootKey, context, "responder");
+      return this.commitAuthenticatedSession(
+        accountId, stored, key, session, message, context,
+        { authenticate, recoveryAuthentication, sender, pendingPrekeyUse }
+      );
+    });
+  }
+
+  private async commitAuthenticatedSession<T>(
+    accountId: string,
+    stored: StoredMessagingCryptoEnigmV2,
+    key: string,
+    session: SessionState,
+    message: EncodedRatchetMessageEnigmV2,
+    context: Uint8Array,
+    options: {
+      authenticate: (plaintext: Uint8Array) => T | Promise<T>;
+      recoveryAuthentication: RecoveryAuthenticationEnigmV2 | undefined;
+      sender?: EnigmSessionSender | undefined;
+      pendingPrekeyUse?: PendingPrekeyUseEnigmV2 | undefined;
+    }
+  ): Promise<T> {
+    let next: SessionState | undefined;
+    let plaintext: Uint8Array | undefined;
+    try {
       const wire: RatchetCiphertext = {
         version: message.version,
         chainId: bytes(message.chainId),
@@ -939,23 +1016,20 @@ class MessagingCryptoManagerEnigmV2 {
         nonce: bytes(message.nonce),
         ciphertext: bytes(message.ciphertext),
       };
-      let next: SessionState | undefined;
-      let plaintext: Uint8Array | undefined;
-      try {
-        const decrypted = sessionDecrypt(session, wire, context);
-        next = decrypted.next;
-        plaintext = decrypted.plaintext;
-        const authenticated = await authenticate(plaintext);
-        stored.sessions[key] = encodeSession(next);
-        storeBootstrapAttribution(stored, key, sender, pendingPrekeyUse);
-        await this.persist(accountId, stored);
-        return authenticated;
-      } finally {
-        if (plaintext) wipe(plaintext);
-        if (next) wipeSession(next);
-        wipeSession(session);
-      }
-    });
+      const decrypted = sessionDecrypt(session, wire, context);
+      next = decrypted.next;
+      plaintext = decrypted.plaintext;
+      authenticateRecovery(session, plaintext, options.recoveryAuthentication);
+      const authenticated = await options.authenticate(plaintext);
+      stored.sessions[key] = encodeSession(next);
+      storeBootstrapAttribution(stored, key, options.sender, options.pendingPrekeyUse);
+      await this.persist(accountId, stored);
+      return authenticated;
+    } finally {
+      if (plaintext) wipe(plaintext);
+      if (next) wipeSession(next);
+      wipeSession(session);
+    }
   }
 
   public rekey(

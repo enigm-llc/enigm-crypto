@@ -33,16 +33,23 @@ const device = createEnigmDeviceClient({
       consumed.add(key);
       return Promise.resolve();
     },
+    reserveForSession: (accountId, keyId, claimId) => {
+      const key = `${accountId}:${keyId}`;
+      const existing = sessionClaims.get(key);
+      if (existing !== undefined && existing !== claimId) {
+        return Promise.reject(new Error('One-time key already claimed by another session'));
+      }
+      if (existing === undefined) sessionClaims.set(key, claimId);
+      return Promise.resolve();
+    },
     consumeForSession: (accountId, keyId, claimId) => {
       const key = `${accountId}:${keyId}`;
       const existing = sessionClaims.get(key);
       if (existing !== undefined && existing !== claimId) {
         return Promise.reject(new Error('One-time key already claimed by another session'));
       }
-      if (existing === undefined) {
-        sessionClaims.set(key, claimId);
-        consumed.add(key);
-      }
+      if (existing === undefined) sessionClaims.set(key, claimId);
+      consumed.add(key);
       return Promise.resolve();
     },
   },

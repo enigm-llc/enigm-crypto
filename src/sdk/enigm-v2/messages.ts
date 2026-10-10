@@ -3,6 +3,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import {
   utf8 as utf8Bytes,
   assertWellFormedUtf16,
+  equal,
   wipe,
   type RandomSource,
 } from "../../core/index.js";
@@ -102,6 +103,11 @@ export const createEnigmMessageClient = (options: {
   ): Promise<void> => {
     const pending = await options.sessions.pendingPrekeyUse(accountId, sessionId);
     if (!pending) return;
+    await options.device.reserveOpenedSessionKeyForSession(
+      accountId,
+      pending.keyId,
+      pending.claimId
+    );
     await options.device.consumeOpenedSessionKeyForSession(
       accountId,
       pending.keyId,
@@ -176,6 +182,27 @@ export const createEnigmMessageClient = (options: {
         undefined,
         packet.senderIdentityKeyId
       );
+      let recoveredContentKey: Uint8Array | undefined;
+      try {
+        recoveredContentKey = await options.sessions.decryptLocalRecovery(
+          input.accountId,
+          packet.recoveryContentKey,
+          recoveryContext(
+            input.conversationId,
+            input.messageId,
+            packet.senderDeviceId,
+            packet.recipientDeviceId
+          )
+        );
+        if (!equal(recoveredContentKey, contentKey)) {
+          throw new Error("EnigmV2 recovery content key does not match the message.");
+        }
+      } catch (error) {
+        wipe(contentKey);
+        throw error;
+      } finally {
+        if (recoveredContentKey) wipe(recoveredContentKey);
+      }
     } else {
       contentKey = await options.sessions.decryptLocalRecovery(
         input.accountId,
@@ -501,6 +528,13 @@ export const createEnigmMessageClient = (options: {
         packet.sessionId,
         packet.senderIdentityKeyId!
       );
+      if (pending) {
+        await options.device.reserveOpenedSessionKeyForSession(
+          input.accountId,
+          pending.keyId,
+          pending.claimId
+        );
+      }
       plaintext = await options.sessions.bootstrapDecryptAndCommit(
         input.accountId,
         packet.sessionId,
@@ -524,6 +558,15 @@ export const createEnigmMessageClient = (options: {
             identityKeyId: packet.senderIdentityKeyId!,
           },
           ...(pending ? { pendingPrekeyUse: pending } : {}),
+          recoveryAuthentication: {
+            recovery: packet.recoveryContentKey,
+            context: recoveryContext(
+              input.conversationId,
+              input.messageId,
+              packet.senderDeviceId,
+              packet.recipientDeviceId
+            ),
+          },
         }
       );
       await completePendingPrekeyUse(input.accountId, packet.sessionId);
@@ -551,6 +594,13 @@ export const createEnigmMessageClient = (options: {
       const opened = await options.device.openSessionEncodedPending(input.accountId, packet.senderIdentity, packet.bootstrapEnvelope, context, packet.senderIdentityKeyId);
       try {
         const pending = pendingPrekeyUse(opened, packet.sessionId, packet.senderIdentityKeyId);
+        if (pending) {
+          await options.device.reserveOpenedSessionKeyForSession(
+            input.accountId,
+            pending.keyId,
+            pending.claimId
+          );
+        }
         await options.sessions.initializeOrVerifySession(input.accountId, packet.sessionId, opened.plaintext, context, 'responder',
           { accountId: authenticatedSenderUserId, deviceId: packet.senderDeviceId, identityKeyId: packet.senderIdentityKeyId }, pending);
         await completePendingPrekeyUse(input.accountId, packet.sessionId);
@@ -708,7 +758,16 @@ export const createEnigmMessageClient = (options: {
             packet.senderDeviceId
           )
         ),
-      { accountId: authenticatedSenderUserId, deviceId: packet.senderDeviceId }
+      { accountId: authenticatedSenderUserId, deviceId: packet.senderDeviceId },
+      {
+        recovery: packet.recoveryContentKey,
+        context: recoveryContext(
+          input.conversationId,
+          input.messageId,
+          packet.senderDeviceId,
+          packet.recipientDeviceId
+        ),
+      }
     );
   };
 

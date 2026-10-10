@@ -37,6 +37,9 @@ test("every isolated surrogate is rejected at account boundaries before adapter 
       consume: async () => {
         calls++;
       },
+      reserveForSession: async () => {
+        calls++;
+      },
       consumeForSession: async () => {
         calls++;
       },
@@ -60,6 +63,10 @@ test("every isolated surrogate is rejected at account boundaries before adapter 
       );
       await assert.rejects(
         async () => device.consumeOpenedSessionKey(account, "key"),
+        /surrogate/
+      );
+      await assert.rejects(
+        () => device.reserveOpenedSessionKeyForSession(account, "key", "claim"),
         /surrogate/
       );
       await assert.rejects(
