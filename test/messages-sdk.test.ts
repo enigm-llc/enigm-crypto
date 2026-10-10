@@ -363,3 +363,26 @@ test('selected content-key fields are bounded and message limits accept the exac
  await assert.rejects(client.encryptMessage({accountId:'alice',conversationId:'c',messageId:'two',senderDeviceId:'alice-device',senderBinding:f.senderBinding,plaintext:Uint8Array.of(1,2),targets:[]}),/too large/);
  for(const maximumMessageBytes of [0,-1,Infinity,1.5,32*1024*1024+1]) assert.throws(()=>createEnigmMessageClient({device:f.device,sessions:f.sessions,randomSource:random,logPublicKey:'',maximumMessageBytes}),/size limit/);
 });
+
+for (const mode of ['after-consume','before-marker-clear','after-marker-clear']) {
+ test(`resume ${mode} with recreated clients and no reusable prekey`, async () => {
+  const f=setup();let fail=true;
+  const consume=f.device.consumeOpenedSessionKeyForSession;
+  f.device.consumeOpenedSessionKeyForSession=async(...args)=>{await consume(...args);if(mode==='after-consume'&&fail){fail=false;throw new Error('injected ambiguous consume');}};
+  const write=f.store.write;
+  f.store.write=async(id,value)=>{
+   const clearing=id==='bob'&&f.store.rows.get(id)?.includes('pendingPrekeyUses')&&!value.includes('pendingPrekeyUses');
+   if(clearing&&mode==='before-marker-clear'&&fail){fail=false;throw new Error('injected clear failure');}
+   await write(id,value);
+   if(clearing&&mode==='after-marker-clear'&&fail){fail=false;throw new Error('injected ambiguous clear');}
+  };
+  const encrypted=await f.client.encryptMessage({accountId:'alice',conversationId:'c',messageId:'m',senderDeviceId:'alice-device',senderBinding:f.senderBinding,plaintext:utf8('restart'),targets:[{userId:'bob',deviceId:'bob-device',encodedIdentity:await f.device.publicIdentityEncoded('bob'),encodedBundle:f.bobBundle,identityKeyId:encodeBase64(f.bob.keyId)}]});
+  const input={accountId:'bob',conversationId:'c',messageId:'m',currentDeviceId:'bob-device',expectedSenderUserId:'alice',encrypted};
+  await assert.rejects(f.client.decryptMessage(input),/injected/);
+  f.device.openSessionEncodedPending=async()=>{throw new Error('consumed private key no longer exists');};
+  const restarted=createEnigmMessageClient({device:f.device,sessions:createEnigmSessionClient({store:f.store,randomSource:random}),randomSource:random,logPublicKey:encodeBase64(ed25519.getPublicKey(new Uint8Array(32).fill(11)))});
+  assert.deepEqual(await restarted.decryptMessage(input),utf8('restart'));
+  assert.equal(f.consumed.length,1);
+  assert.equal(JSON.parse(f.store.rows.get('bob')!).pendingPrekeyUses,undefined);
+ });
+}

@@ -414,6 +414,7 @@ export const createEnigmTransparencyVerifier = (
     /** Disallow witness-outage continuity for operations requiring current witness evidence. */
     requireFreshWitnesses?: boolean;
   }): Promise<KeyTransparencyWitnessVerificationEnigmV2> => {
+    assertWellFormedUtf16(input.accountId, "Key transparency account identifier");
     if (!input.proof) throw new KeyTransparencyErrorEnigmV2("PROOF_REQUIRED");
     const proof = input.proof;
     verifyIdentityBindingEnigmV2({
@@ -566,6 +567,7 @@ export const createEnigmTransparencyVerifier = (
   const deleteKeyTransparencyStateEnigmV2 = async (
     accountId: string
   ): Promise<void> => {
+    assertWellFormedUtf16(accountId, "Key transparency account identifier");
     await store.exclusive(accountId, () => Promise.all([
       store.delete(checkpointLabel(accountId)),
       store.delete(identityTrustLabel(accountId)),

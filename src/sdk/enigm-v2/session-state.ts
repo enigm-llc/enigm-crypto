@@ -58,6 +58,10 @@ type EncodedGroup = {
   membersHash: string;
 };
 export type PendingPrekeyUseEnigmV2 = { keyId: string; claimId: string };
+export type BootstrapSessionOptionsEnigmV2 = {
+  sender?: EnigmSessionSender;
+  pendingPrekeyUse?: PendingPrekeyUseEnigmV2;
+};
 export type EnigmSessionSender = { accountId: string; deviceId: string; identityKeyId: string };
 const validateSender = (sender: EnigmSessionSender): void => {
   if (!sender || typeof sender.accountId !== 'string' || !sender.accountId || sender.accountId.length > 256 ||
@@ -69,6 +73,8 @@ const validateSender = (sender: EnigmSessionSender): void => {
   assertWellFormedUtf16(sender.deviceId, "EnigmV2 sender device identifier");
 };
 const assertSender = (stored: StoredMessagingCryptoEnigmV2, key: string, accountId: string, deviceId: string): void => {
+  assertWellFormedUtf16(accountId, "EnigmV2 sender account identifier");
+  assertWellFormedUtf16(deviceId, "EnigmV2 sender device identifier");
   const sender = stored.sessionSenders?.[key];
   if (sender?.accountId !== accountId || sender.deviceId !== deviceId)
     throw new Error('EnigmV2 session sender attribution mismatch or unavailable.');
@@ -224,6 +230,32 @@ const decodeGroup = (state: EncodedGroup): GroupEpochState => ({
   membersHash: bytes(state.membersHash),
 });
 
+const validateStoredSenders = (state: StoredMessagingCryptoEnigmV2): void => {
+  if (state.sessionSenders !== undefined) {
+    if (!state.sessionSenders || typeof state.sessionSenders !== 'object' || Array.isArray(state.sessionSenders) || Object.keys(state.sessionSenders).length > MAX_SESSIONS)
+      throw new Error('Invalid EnigmV2 session sender attribution storage.');
+    for (const [key, sender] of Object.entries(state.sessionSenders)) {
+      if (!Object.hasOwn(state.sessions, key)) throw new Error('Orphaned EnigmV2 session sender attribution.');
+      validateSender(sender);
+    }
+  }
+};
+const validateStoredPendingPrekeys = (state: StoredMessagingCryptoEnigmV2): void => {
+  if (state.pendingPrekeyUses !== undefined) {
+    if (!state.pendingPrekeyUses || typeof state.pendingPrekeyUses !== 'object' || Array.isArray(state.pendingPrekeyUses) || Object.keys(state.pendingPrekeyUses).length > MAX_SESSIONS)
+      throw new Error('Invalid EnigmV2 pending one-time key storage.');
+    const keyIds = new Set<string>();
+    for (const [key, pending] of Object.entries(state.pendingPrekeyUses)) {
+      if (!/^[0-9a-f]{64}$/u.test(key) || !Object.hasOwn(state.sessions, key))
+        throw new Error('Orphaned EnigmV2 pending one-time key use.');
+      validatePendingPrekeyUse(pending);
+      if (keyIds.has(pending.keyId))
+        throw new Error('Duplicate EnigmV2 pending one-time key use.');
+      keyIds.add(pending.keyId);
+    }
+  }
+};
+
 const validateStoredState = (state: StoredMessagingCryptoEnigmV2): void => {
   if (
     state.version !== STORAGE_VERSION ||
@@ -245,27 +277,11 @@ const validateStoredState = (state: StoredMessagingCryptoEnigmV2): void => {
   ) {
     throw new Error("Invalid EnigmV2 messaging cryptographic storage.");
   }
-  if (state.sessionSenders !== undefined) {
-    if (!state.sessionSenders || typeof state.sessionSenders !== 'object' || Array.isArray(state.sessionSenders) || Object.keys(state.sessionSenders).length > MAX_SESSIONS)
-      throw new Error('Invalid EnigmV2 session sender attribution storage.');
-    for (const [key, sender] of Object.entries(state.sessionSenders)) {
-      if (!Object.hasOwn(state.sessions, key)) throw new Error('Orphaned EnigmV2 session sender attribution.');
-      validateSender(sender);
-    }
+  for (const id of state.historicalDeviceIds) {
+    assertWellFormedUtf16(id, "EnigmV2 historical device identifier");
   }
-  if (state.pendingPrekeyUses !== undefined) {
-    if (!state.pendingPrekeyUses || typeof state.pendingPrekeyUses !== 'object' || Array.isArray(state.pendingPrekeyUses) || Object.keys(state.pendingPrekeyUses).length > MAX_SESSIONS)
-      throw new Error('Invalid EnigmV2 pending one-time key storage.');
-    const keyIds = new Set<string>();
-    for (const [key, pending] of Object.entries(state.pendingPrekeyUses)) {
-      if (!/^[0-9a-f]{64}$/u.test(key) || !Object.hasOwn(state.sessions, key))
-        throw new Error('Orphaned EnigmV2 pending one-time key use.');
-      validatePendingPrekeyUse(pending);
-      if (keyIds.has(pending.keyId))
-        throw new Error('Duplicate EnigmV2 pending one-time key use.');
-      keyIds.add(pending.keyId);
-    }
-  }
+  validateStoredSenders(state);
+  validateStoredPendingPrekeys(state);
   for (const encoded of Object.values(state.sessions)) {
     const session = decodeSession(encoded);
     try {
@@ -284,6 +300,55 @@ const validateStoredState = (state: StoredMessagingCryptoEnigmV2): void => {
   }
 };
 
+const assertBootstrapAttribution = (
+  stored: StoredMessagingCryptoEnigmV2,
+  key: string,
+  sender?: EnigmSessionSender,
+  pendingPrekeyUse?: PendingPrekeyUseEnigmV2
+): void => {
+  if (pendingPrekeyUse) {
+    assertPendingPrekeyAvailable(stored, key, pendingPrekeyUse);
+    if (!sender) throw new Error("EnigmV2 pending one-time key use requires sender attribution.");
+  }
+  if (!sender) return;
+  validateSender(sender);
+  const currentSender = stored.sessionSenders?.[key];
+  if (currentSender && (currentSender.accountId !== sender.accountId || currentSender.deviceId !== sender.deviceId || currentSender.identityKeyId !== sender.identityKeyId)) {
+    throw new Error("EnigmV2 session sender attribution mismatch.");
+  }
+};
+
+const storeBootstrapAttribution = (
+  stored: StoredMessagingCryptoEnigmV2,
+  key: string,
+  sender?: EnigmSessionSender,
+  pendingPrekeyUse?: PendingPrekeyUseEnigmV2
+): void => {
+  if (sender) {
+    stored.sessionSenders ??= {};
+    stored.sessionSenders[key] = { ...sender };
+  }
+  if (pendingPrekeyUse) {
+    stored.pendingPrekeyUses ??= {};
+    stored.pendingPrekeyUses[key] = { ...pendingPrekeyUse };
+  }
+};
+
+const assertMatchingSession = (encoded: EncodedSession, expected: SessionState): void => {
+  const current = decodeSession(encoded);
+  try {
+    if (current.epoch !== expected.epoch ||
+        !equal(current.sessionId, expected.sessionId) ||
+        !equal(current.rootKey, expected.rootKey) ||
+        !equal(current.send.chainId, expected.send.chainId) ||
+        !equal(current.receive.chainId, expected.receive.chainId)) {
+      throw new Error("EnigmV2 bootstrap does not match the current session.");
+    }
+  } finally {
+    wipeSession(current);
+  }
+};
+
 class MessagingCryptoManagerEnigmV2 {
   constructor(
     private readonly options: {
@@ -295,6 +360,7 @@ class MessagingCryptoManagerEnigmV2 {
     accountId: string,
     operation: () => Promise<T>
   ): Promise<T> {
+    assertWellFormedUtf16(accountId, "EnigmV2 account identifier");
     return this.options.store.exclusive(accountId, operation);
   }
   private async load(accountId: string): Promise<StoredMessagingCryptoEnigmV2> {
@@ -394,16 +460,7 @@ class MessagingCryptoManagerEnigmV2 {
     return this.exclusive(accountId, async () => {
       const stored = await this.load(accountId);
       const key = stateKey(id);
-      if (pendingPrekeyUse) {
-        assertPendingPrekeyAvailable(stored, key, pendingPrekeyUse);
-        if (!sender) throw new Error("EnigmV2 pending one-time key use requires sender attribution.");
-      }
-      if (sender) {
-        validateSender(sender);
-        const currentSender = stored.sessionSenders?.[key];
-        if (currentSender && (currentSender.accountId !== sender.accountId || currentSender.deviceId !== sender.deviceId || currentSender.identityKeyId !== sender.identityKeyId))
-          throw new Error('EnigmV2 session sender attribution mismatch.');
-      }
+      assertBootstrapAttribution(stored, key, sender, pendingPrekeyUse);
       const expected = initializeSession(rootKey, context, role);
       try {
         const encoded = stored.sessions[key];
@@ -412,45 +469,17 @@ class MessagingCryptoManagerEnigmV2 {
             throw new Error("EnigmV2 session capacity reached.");
           }
           stored.sessions[key] = encodeSession(expected);
-          if (sender) {
-            stored.sessionSenders ??= {};
-            stored.sessionSenders[key] = { ...sender };
-          }
-          if (pendingPrekeyUse) {
-            stored.pendingPrekeyUses ??= {};
-            stored.pendingPrekeyUses[key] = { ...pendingPrekeyUse };
-          }
+          storeBootstrapAttribution(stored, key, sender, pendingPrekeyUse);
           await this.persist(accountId, stored);
           return "initialized";
         }
 
-        const current = decodeSession(encoded);
-        try {
-          const matchesSession =
-            current.epoch === expected.epoch &&
-            equal(current.sessionId, expected.sessionId) &&
-            equal(current.rootKey, expected.rootKey) &&
-            equal(current.send.chainId, expected.send.chainId) &&
-            equal(current.receive.chainId, expected.receive.chainId);
-          if (!matchesSession)
-            throw new Error(
-              "EnigmV2 bootstrap does not match the current session."
-            );
-          if (sender || pendingPrekeyUse) {
-            if (sender) {
-              stored.sessionSenders ??= {};
-              stored.sessionSenders[key] = { ...sender };
-            }
-            if (pendingPrekeyUse) {
-              stored.pendingPrekeyUses ??= {};
-              stored.pendingPrekeyUses[key] = { ...pendingPrekeyUse };
-            }
-            await this.persist(accountId, stored);
-          }
-          return "matching-session";
-        } finally {
-          wipeSession(current);
+        assertMatchingSession(encoded, expected);
+        if (sender || pendingPrekeyUse) {
+          storeBootstrapAttribution(stored, key, sender, pendingPrekeyUse);
+          await this.persist(accountId, stored);
         }
+        return "matching-session";
       } finally {
         wipeSession(expected);
       }
@@ -709,6 +738,7 @@ class MessagingCryptoManagerEnigmV2 {
       if (Object.keys(stored.pendingPrekeyUses ?? {}).length > 0) {
         throw new Error("EnigmV2 transfer is unavailable while one-time key consumption is pending.");
       }
+      assertWellFormedUtf16(currentDeviceId, "EnigmV2 historical device identifier");
       const historicalDeviceIds = [
         ...new Set([...stored.historicalDeviceIds, currentDeviceId]),
       ];
@@ -880,9 +910,11 @@ class MessagingCryptoManagerEnigmV2 {
     message: EncodedRatchetMessageEnigmV2,
     context: Uint8Array,
     authenticate: (plaintext: Uint8Array) => T | Promise<T>,
-    sender?: EnigmSessionSender,
-    pendingPrekeyUse?: PendingPrekeyUseEnigmV2
+    options?: EnigmSessionSender | BootstrapSessionOptionsEnigmV2
   ): Promise<T> {
+    const { sender, pendingPrekeyUse } = options && "accountId" in options
+      ? { sender: options, pendingPrekeyUse: undefined }
+      : options ?? {};
     return this.exclusive(accountId, async () => {
       if (sender) validateSender(sender);
       if (pendingPrekeyUse) {
@@ -915,14 +947,7 @@ class MessagingCryptoManagerEnigmV2 {
         plaintext = decrypted.plaintext;
         const authenticated = await authenticate(plaintext);
         stored.sessions[key] = encodeSession(next);
-        if (sender) {
-          stored.sessionSenders ??= {};
-          stored.sessionSenders[key] = { ...sender };
-        }
-        if (pendingPrekeyUse) {
-          stored.pendingPrekeyUses ??= {};
-          stored.pendingPrekeyUses[key] = { ...pendingPrekeyUse };
-        }
+        storeBootstrapAttribution(stored, key, sender, pendingPrekeyUse);
         await this.persist(accountId, stored);
         return authenticated;
       } finally {

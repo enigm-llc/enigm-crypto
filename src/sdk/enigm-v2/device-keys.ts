@@ -1,6 +1,6 @@
 import type { DeviceKeyStore } from "../../adapters/device-keys.js";
 import { decodeBase64, encodeBase64 } from "../../core/base64.js";
-import { equal, wipe, type RandomSource } from "../../core/index.js";
+import { assertWellFormedUtf16, equal, wipe, type RandomSource } from "../../core/index.js";
 import {
   decodeEnvelope,
   decodePublicIdentity,
@@ -27,6 +27,7 @@ export const createEnigmDeviceClient = (options: {
       state: Awaited<ReturnType<DeviceKeyStore["load"]>>
     ) => T | Promise<T>
   ): Promise<T> => {
+    assertWellFormedUtf16(accountId, "Device account identifier");
     const state = await options.store.load(accountId);
     try {
       validatePrivateIdentity(state.identity);
@@ -142,13 +143,16 @@ export const createEnigmDeviceClient = (options: {
         throw error;
       }
     },
-    consumeOpenedSessionKey: (accountId: string, keyId: string) =>
-      options.store.consume(accountId, keyId),
+    consumeOpenedSessionKey: (accountId: string, keyId: string) => {
+      assertWellFormedUtf16(accountId, "Device account identifier");
+      return options.store.consume(accountId, keyId);
+    },
     consumeOpenedSessionKeyForSession: async (
       accountId: string,
       keyId: string,
       claimId: string
     ) => {
+      assertWellFormedUtf16(accountId, "Device account identifier");
       if (!options.store.consumeForSession) {
         throw new Error("The device key store does not support idempotent session claims.");
       }

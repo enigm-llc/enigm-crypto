@@ -65,6 +65,12 @@ with these delimiters; allowing them in identifiers creates ambiguous tuples. Us
 opaque identifiers and preserve their exact bytes. Low-level protocols accept arbitrary byte
 contexts, so callers must frame their own identifiers unambiguously.
 
+All SDK identifiers, including local account IDs and historical device IDs, must be well-formed
+Unicode scalar strings. Unpaired UTF-16 surrogates are rejected before account storage is accessed
+or identifiers enter cryptographic contexts. Valid supplementary characters are preserved without
+normalization. The general-purpose UTF-8 encoder retains its TextEncoder-compatible replacement
+behavior for ordinary text; it is not an identifier validator.
+
 Attachments are fully buffered and have base64 expansion. The host must cap files and responses
 before loading/parsing; avoid converting an unbounded remote object into a JavaScript string.
 The SDK cannot prevent allocations already performed by the network adapter or JSON parser.

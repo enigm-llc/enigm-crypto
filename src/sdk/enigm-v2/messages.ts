@@ -517,8 +517,14 @@ export const createEnigmMessageClient = (options: {
               packet.senderDeviceId
             )
           ),
-        { accountId: authenticatedSenderUserId!, deviceId: packet.senderDeviceId, identityKeyId: packet.senderIdentityKeyId! },
-        pending
+        {
+          sender: {
+            accountId: authenticatedSenderUserId!,
+            deviceId: packet.senderDeviceId,
+            identityKeyId: packet.senderIdentityKeyId!,
+          },
+          ...(pending ? { pendingPrekeyUse: pending } : {}),
+        }
       );
       await completePendingPrekeyUse(input.accountId, packet.sessionId);
       return plaintext;

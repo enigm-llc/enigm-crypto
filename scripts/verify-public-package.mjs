@@ -12,7 +12,7 @@ const description = JSON.parse(execFileSync(process.execPath,
   [npmCli, 'pack', '--dry-run', '--ignore-scripts', '--json'], { cwd: root, encoding: 'utf8' }));
 const files = description[0].files.map(file => file.path);
 const roots = new Set(manifest.files);
-const privateAutomationMarker = String.fromCharCode(99, 111, 100, 101, 120);
+const privateAutomationMarker = String.fromCodePoint(99, 111, 100, 101, 120);
 for (const file of files) {
   assert(file === 'package.json' || [...roots].some(allowed => file === allowed || file.startsWith(`${allowed}/`)), `Unexpected public file: ${file}`);
   assert(!new RegExp(String.raw`(^|\/)(node_modules|\.git|\.env[^/]*|test|tests|scripts|superpowers|\.superpowers|\.${privateAutomationMarker})(\/|$)`, 'u').test(file), `Internal payload: ${file}`);
