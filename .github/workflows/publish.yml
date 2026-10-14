@@ -41,7 +41,7 @@ jobs:
           git merge-base --is-ancestor HEAD origin/main
           test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
           node scripts/verify-release.mjs --tag "$RELEASE_TAG"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 24.20.0
       - run: npm ci --ignore-scripts
@@ -83,7 +83,7 @@ jobs:
         env:
           NPM_RELEASE_READY: ${{ vars.NPM_RELEASE_READY }}
         run: test "$NPM_RELEASE_READY" = true
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 24.20.0
           registry-url: https://registry.npmjs.org
