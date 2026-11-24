@@ -4,7 +4,7 @@ import {
 } from "./identity-binding.js";
 import { KeyTransparencyErrorEnigmV2 } from "./errors.js";
 export { KeyTransparencyErrorEnigmV2 } from "./errors.js";
-import { sha256 } from "@noble/hashes/sha2.js";
+import { sha256 } from "../../core/primitives.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { utf8, concat } from "../../core/bytes.js";
 import { assertWellFormedUtf16 } from "../../core/utf8.js";

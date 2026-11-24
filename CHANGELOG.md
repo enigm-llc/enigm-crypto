@@ -17,6 +17,18 @@
 - Resume one-time key consumption with durable session claims after storage or process interruption.
 - Authenticate recovery capsules before receive commits and reserve one-time key claims before a
   retained private prekey can create another session.
+- Store ML-DSA-65 and ML-KEM-768 private keys as FIPS 204/203 seeds (`mlDsaSeed`, `mlKemSeed`).
+  Expanded private keys are rejected with `EnigmKeyError` `KEY_FORMAT_CHANGED` (no migration:
+  regenerate); seeds that do not derive the stored public key raise `KEY_MISMATCH`.
+- Add a primitive engine boundary with an automatic React Native iOS native engine (Rust,
+  synchronous JSI, dynamic framework) behind a known-answer self-test, silent JavaScript fallback
+  in production and a development warning. `cryptoBackend()` reports the active engine.
+- Cache successful KEM bundle signature verifications by a hash of all verified bytes when the
+  JavaScript engine runs; expiry and structure are still checked on every call.
+  `clearVerificationCache()` drops the cache.
+- Route every primitive (ML-DSA, ML-KEM, Ed25519, X25519, SHA-2, HMAC/HKDF-SHA512, AES-256-GCM)
+  through the engine with unchanged rules, including strict Ed25519 (`zip215: false`) and
+  X25519 low-order rejection.
 - Document participant metadata exposure, history-recovery tradeoffs, runtime constraints and
   remaining prerequisites for publication and production use.
 

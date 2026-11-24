@@ -105,8 +105,8 @@ try {
 } finally {
   wipe(logSecret);
   for (const state of Object.values(material)) {
-    wipe(state.identity.ed25519SecretKey, state.identity.mlDsaSecretKey);
-    for (const item of state.bundles) wipe(item.bundle.x25519SecretKey, item.bundle.mlKemSecretKey);
+    wipe(state.identity.ed25519SecretKey, state.identity.mlDsaSeed);
+    for (const item of state.bundles) wipe(item.bundle.x25519SecretKey, item.bundle.mlKemSeed);
   }
   await sessions.delete('alice');
   await sessions.delete('bob');

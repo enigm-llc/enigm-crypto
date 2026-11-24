@@ -1,6 +1,4 @@
-import { gcm } from '@noble/ciphers/aes.js';
-import { hmac } from '@noble/hashes/hmac.js';
-import { sha256, sha512 } from '@noble/hashes/sha2.js';
+import { gcm, hmac, sha256, sha512 } from '../core/primitives.js';
 import { randomBytes } from '@noble/post-quantum/utils.js';
 
 import { assertLength, clone, frame, u32, utf8, wipe } from '../core/bytes.js';

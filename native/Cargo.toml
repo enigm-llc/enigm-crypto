@@ -1,0 +1,31 @@
+[package]
+name = "enigm-crypto-native"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+license = "Apache-2.0"
+description = "Native primitive engine for @enigm/crypto: ML-DSA-65, ML-KEM-768 (seed keys), Ed25519, X25519, SHA-2, HMAC/HKDF-SHA512 and AES-256-GCM, byte-identical to the JavaScript engine."
+
+[lib]
+# cdylib: shipped as a dynamic framework/.so so it never collides with another Rust staticlib
+# in the host app. rlib: Rust tests.
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+ml-kem = { version = "=0.3.4", default-features = false, features = ["zeroize"] }
+ml-dsa = { version = "=0.1.2", default-features = false, features = ["zeroize"] }
+curve25519-dalek = { version = "=5.0.0", default-features = false, features = ["alloc", "precomputed-tables", "zeroize"] }
+sha2 = { version = "=0.11.1", default-features = false }
+hmac = { version = "=0.13.0", default-features = false }
+hkdf = { version = "=0.13.0", default-features = false }
+aes-gcm = { version = "=0.11.1", default-features = false, features = ["aes", "alloc", "zeroize"] }
+zeroize = { version = "=1.8.2", default-features = false }
+
+[dev-dependencies]
+serde_json = "=1.0.145"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = "symbols"

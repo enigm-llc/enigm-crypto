@@ -1,7 +1,6 @@
-import { ed25519 } from '@noble/curves/ed25519.js';
-import { sha256 } from '@noble/hashes/sha2.js';
-
+import { ed25519, sha256 } from '../core/primitives.js';
 import { assertLength, clone, concat, equal, utf8 } from '../core/bytes.js';
+import { engine } from '../core/engine.js';
 import { assertWellFormedUtf16 } from '../core/utf8.js';
 
 const EMPTY_TREE_HASH = sha256(new Uint8Array());
@@ -445,7 +444,7 @@ export const verifyC2spLogSignature = (
       if ((match[2] ?? '').length !== LOG_SIGNATURE_BASE64_LENGTH) continue;
       const encoded = decodeBase64(match[2] ?? '');
       if (encoded.length !== 68 || !equal(encoded.slice(0, 4), expectedId)) continue;
-      return ed25519.verify(encoded.slice(4), utf8(noteText), signer.publicKey, { zip215: false });
+      return engine().ed25519Verify(signer.publicKey, utf8(noteText), encoded.slice(4));
     }
     return false;
   } catch {
@@ -478,7 +477,7 @@ export const verifyC2spWitnessCosignature = (
       const timestamp = decodeUint64(encoded.slice(4, 12));
       if (timestamp === 0 || timestamp > nowSeconds + maximumFutureSkewSeconds) return null;
       const transcript = utf8(`cosignature/v1\ntime ${timestamp}\n${noteText}`);
-      if (ed25519.verify(encoded.slice(12), transcript, witness.publicKey, { zip215: false })) {
+      if (engine().ed25519Verify(witness.publicKey, transcript, encoded.slice(12))) {
         return timestamp;
       }
     }

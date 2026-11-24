@@ -1,4 +1,4 @@
-import { ed25519 } from "@noble/curves/ed25519.js";
+import { engine } from "../../core/engine.js";
 import { utf8 } from "../../core/bytes.js";
 import { assertWellFormedUtf16 } from "../../core/utf8.js";
 import { decodeBase64 } from "../../core/base64.js";
@@ -30,8 +30,8 @@ export const verifyEnigmIdentityBinding = (
       input.expectedDeviceId.length > 256 ||
       signature.length !== 64 ||
       publicKey.length !== 32 ||
-      !ed25519.verify(
-        signature,
+      !engine().ed25519Verify(
+        publicKey,
         utf8(
           JSON.stringify([
             "enigm-key-transparency-binding-v2",
@@ -42,8 +42,7 @@ export const verifyEnigmIdentityBinding = (
             input.deviceCommitment,
           ])
         ),
-        publicKey,
-        { zip215: false }
+        signature
       )
     ) {
       throw new KeyTransparencyErrorEnigmV2("IDENTITY_BINDING_MISMATCH");

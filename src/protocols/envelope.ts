@@ -1,12 +1,9 @@
-import { gcm } from '@noble/ciphers/aes.js';
-import { x25519 } from '@noble/curves/ed25519.js';
-import { hkdf } from '@noble/hashes/hkdf.js';
-import { sha512 } from '@noble/hashes/sha2.js';
-import { ml_kem768 } from '@noble/post-quantum/ml-kem.js';
+import { gcm, hkdf, sha512, x25519 } from '../core/primitives.js';
 import { randomBytes } from '@noble/post-quantum/utils.js';
 
 import { CIPHER_SUITE, PROTOCOL_VERSION, type HybridEnvelope, type OpenOptions, type SealOptions } from '../core/types.js';
 import { assertLength, clone, equal, frame, utf8, wipe } from '../core/bytes.js';
+import { engine } from '../core/engine.js';
 import { signHybrid, validatePrivateIdentity, validatePublicIdentity, verifyHybrid } from '../primitives/identity.js';
 import { validatePrivateKemBundle, verifyKemBundle } from '../primitives/kem.js';
 import { envelopeAssociatedData, envelopeSignatureTranscript } from './transcript.js';
@@ -53,7 +50,14 @@ export const seal = (options: SealOptions): HybridEnvelope => {
 
   const randomSource = options.randomSource ?? randomBytes;
   const ephemeral = x25519.keygen(randomSource(32));
-  const encapsulated = ml_kem768.encapsulate(options.recipient.mlKemPublicKey, randomSource(32));
+  const encapsulationEntropy = randomSource(32);
+  assertLength(encapsulationEntropy, 32, 'ML-KEM encapsulation entropy');
+  let encapsulated: { cipherText: Uint8Array; sharedSecret: Uint8Array };
+  try {
+    encapsulated = engine().mlKem768Encapsulate(options.recipient.mlKemPublicKey, encapsulationEntropy);
+  } finally {
+    wipe(encapsulationEntropy);
+  }
   const classicalSecret = x25519.getSharedSecret(ephemeral.secretKey, options.recipient.x25519PublicKey);
   const nonce = randomSource(12);
   assertLength(nonce, 12, 'Envelope nonce');
@@ -125,7 +129,11 @@ export const open = (options: OpenOptions): Uint8Array => {
   }
 
   const associatedData = envelopeAssociatedData(envelope, options.context);
-  const mlKemSecret = ml_kem768.decapsulate(envelope.mlKemCiphertext, options.recipient.mlKemSecretKey);
+  const mlKemSecret = engine().mlKem768Decapsulate(
+    options.recipient.mlKemSeed,
+    options.recipient.mlKemPublicKey,
+    envelope.mlKemCiphertext,
+  );
   const classicalSecret = x25519.getSharedSecret(
     options.recipient.x25519SecretKey,
     envelope.ephemeralX25519PublicKey,

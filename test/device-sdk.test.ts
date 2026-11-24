@@ -23,5 +23,5 @@ test('device SDK bounds encoded public keys and envelopes before wire decoding',
  await assert.rejects(client.reserveOpenedSessionKeyForSession('alice','key','claim'),/idempotent session reservations/);
  await assert.rejects(client.consumeOpenedSessionKeyForSession('alice','key','claim'),/idempotent session claims/);
  assert.equal(consumed,false);
- assert.ok(identity.mlDsaSecretKey.some(byte=>byte!==0));
+ assert.ok(identity.mlDsaSeed.some(byte=>byte!==0));
 });

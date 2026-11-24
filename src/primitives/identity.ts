@@ -1,7 +1,9 @@
-import { ed25519 } from '@noble/curves/ed25519.js';
-import { sha256 } from '@noble/hashes/sha2.js';
+import { ed25519, sha256 } from '../core/primitives.js';
 import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
 import { randomBytes } from '@noble/post-quantum/utils.js';
+
+import { engine, ML_DSA65_SEED_BYTES } from '../core/engine.js';
+import { EnigmKeyError } from '../core/errors.js';
 
 import { CIPHER_SUITE, PROTOCOL_VERSION, type HybridSignature, type PrivateIdentity, type PublicIdentity, type RandomSource } from '../core/types.js';
 import { clone, concat, equal, frame, utf8, wipe, assertLength } from '../core/bytes.js';
@@ -13,18 +15,20 @@ export const identityKeyId = (mlDsaPublicKey: Uint8Array, ed25519PublicKey: Uint
   sha256(identityTranscript(mlDsaPublicKey, ed25519PublicKey));
 
 export const generateIdentity = (randomSource: RandomSource = randomBytes): PrivateIdentity => {
-  const mlDsaSeed = randomSource(32);
+  const mlDsaSeed = randomSource(ML_DSA65_SEED_BYTES);
   const ed25519Seed = randomSource(32);
   try {
-    const mlDsa = ml_dsa65.keygen(mlDsaSeed);
+    assertLength(mlDsaSeed, ML_DSA65_SEED_BYTES, 'ML-DSA-65 seed');
+    assertLength(ed25519Seed, 32, 'Ed25519 seed');
+    const mlDsaPublicKey = engine().mlDsa65PublicKey(mlDsaSeed);
     const classical = ed25519.keygen(ed25519Seed);
-    const keyId = identityKeyId(mlDsa.publicKey, classical.publicKey);
+    const keyId = identityKeyId(mlDsaPublicKey, classical.publicKey);
     return {
       version: PROTOCOL_VERSION,
       suite: CIPHER_SUITE,
       keyId,
-      mlDsaPublicKey: clone(mlDsa.publicKey),
-      mlDsaSecretKey: clone(mlDsa.secretKey),
+      mlDsaPublicKey,
+      mlDsaSeed: clone(mlDsaSeed),
       ed25519PublicKey: clone(classical.publicKey),
       ed25519SecretKey: clone(classical.secretKey),
     };
@@ -48,7 +52,7 @@ export const signHybrid = (identity: PrivateIdentity, message: Uint8Array, rando
   try {
     assertLength(entropy, 32, 'ML-DSA signing entropy');
     return {
-      mlDsa: ml_dsa65.sign(transcript, identity.mlDsaSecretKey, { context: ML_DSA_CONTEXT, extraEntropy: entropy }),
+      mlDsa: engine().mlDsa65Sign(identity.mlDsaSeed, identity.mlDsaPublicKey, transcript, ML_DSA_CONTEXT, entropy),
       ed25519: ed25519.sign(transcript, identity.ed25519SecretKey),
     };
   } finally { wipe(entropy); }
@@ -68,10 +72,10 @@ export const verifyHybrid = (
       return false;
     }
     const transcript = frame(utf8('enigm-hybrid-signature-v2'), message);
+    const primitives = engine();
     return (
-      ml_dsa65.verify(signature.mlDsa, transcript, identity.mlDsaPublicKey, {
-        context: ML_DSA_CONTEXT,
-      }) && ed25519.verify(signature.ed25519, transcript, identity.ed25519PublicKey, { zip215: false })
+      primitives.mlDsa65Verify(identity.mlDsaPublicKey, transcript, ML_DSA_CONTEXT, signature.mlDsa) &&
+      primitives.ed25519Verify(identity.ed25519PublicKey, transcript, signature.ed25519)
     );
   } catch {
     return false;
@@ -93,12 +97,18 @@ export const validatePublicIdentity = (identity: PublicIdentity): void => {
   if (!equal(expected, identity.keyId)) throw new Error('Identity key identifier mismatch.');
 };
 
+/**
+ * Structural check of a private identity. A key without a 32-byte ML-DSA seed (for example
+ * an expanded key stored by an earlier version) fails with `KEY_FORMAT_CHANGED`: regenerate it.
+ * Whether the seed derives the public key is checked at each signature (`KEY_MISMATCH`).
+ */
 export const validatePrivateIdentity = (identity: PrivateIdentity): void => {
   validatePublicIdentity(identity);
-  if (
-    identity.mlDsaSecretKey.length !== ml_dsa65.lengths.secretKey ||
-    identity.ed25519SecretKey.length !== 32
-  ) {
+  const { mlDsaSeed, ed25519SecretKey } = identity as Partial<PrivateIdentity>;
+  if (!(mlDsaSeed instanceof Uint8Array) || mlDsaSeed.length !== ML_DSA65_SEED_BYTES) {
+    throw new EnigmKeyError('KEY_FORMAT_CHANGED', 'Private identity key format changed; generate a new identity.');
+  }
+  if (!(ed25519SecretKey instanceof Uint8Array) || ed25519SecretKey.length !== 32) {
     throw new Error('Invalid private identity key length.');
   }
 };

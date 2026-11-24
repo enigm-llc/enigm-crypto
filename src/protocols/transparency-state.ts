@@ -1,5 +1,4 @@
-import { sha256 } from "@noble/hashes/sha2.js";
-
+import { sha256 } from "../core/primitives.js";
 import { assertLength, equal, frame, utf8 } from "../core/bytes.js";
 import {
   keyTransparencyEventHash,

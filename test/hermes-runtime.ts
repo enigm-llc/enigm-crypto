@@ -62,7 +62,7 @@ const runSdk = async (): Promise<void> => {
     load: (id: string) => {
       const identity = id === 'alice' ? sdkAlice : sdkBob;
       const bundle = id === 'alice' ? bundles.alice : bundles.bob;
-      return Promise.resolve({identity:{...identity,mlDsaSecretKey:identity.mlDsaSecretKey.slice(),ed25519SecretKey:identity.ed25519SecretKey.slice()},bundles:[{lastResort:id==='alice',bundle:{...bundle,mlKemSecretKey:bundle.mlKemSecretKey.slice(),x25519SecretKey:bundle.x25519SecretKey.slice()}}]});
+      return Promise.resolve({identity:{...identity,mlDsaSeed:identity.mlDsaSeed.slice(),ed25519SecretKey:identity.ed25519SecretKey.slice()},bundles:[{lastResort:id==='alice',bundle:{...bundle,mlKemSeed:bundle.mlKemSeed.slice(),x25519SecretKey:bundle.x25519SecretKey.slice()}}]});
     },
     consume:()=>{ consumed++; return Promise.resolve(); },
     reserveForSession:(_accountId:string,keyId:string,claimId:string)=>{

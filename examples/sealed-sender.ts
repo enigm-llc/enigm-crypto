@@ -40,8 +40,8 @@ try {
   }
   process.stdout.write('sealed sender round-trip verified\n');
 } finally {
-  wipe(expectedPlaintext, sender.mlDsaSecretKey, sender.ed25519SecretKey,
-    recipient.mlDsaSecretKey, recipient.ed25519SecretKey,
-    recipientBundle.mlKemSecretKey, recipientBundle.x25519SecretKey);
+  wipe(expectedPlaintext, sender.mlDsaSeed, sender.ed25519SecretKey,
+    recipient.mlDsaSeed, recipient.ed25519SecretKey,
+    recipientBundle.mlKemSeed, recipientBundle.x25519SecretKey);
   if (recovered) wipe(recovered);
 }
