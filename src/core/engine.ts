@@ -224,7 +224,7 @@ const requestNativeBinding = (host: HostGlobal): unknown => {
   if (host[NATIVE_GLOBAL] !== undefined) return host[NATIVE_GLOBAL];
   try {
     if (typeof host.__turboModuleProxy === 'function') host.__turboModuleProxy(NATIVE_MODULE);
-    else void host.nativeModuleProxy?.[NATIVE_MODULE];
+    else if (host.nativeModuleProxy) Reflect.get(host.nativeModuleProxy, NATIVE_MODULE);
   } catch {
     // Missing module: handled below as JS fallback.
   }
@@ -281,49 +281,81 @@ const fromHex = (value: string): Uint8Array => {
   return output;
 };
 
+const KAT_MESSAGE = new Uint8Array([1, 2, 3]);
+const KAT_CONTEXT = new Uint8Array([4, 5]);
+const KAT_KEY = new Uint8Array(32).fill(7);
+
+const matches = (value: Uint8Array, expectedHex: string): boolean => hex(value) === expectedHex;
+const digestMatches = (value: Uint8Array, expectedHex: string): boolean => matches(sha256(value), expectedHex);
+const flipped = (value: Uint8Array, index: number): Uint8Array => {
+  const copy = value.slice();
+  copy[index] = (copy[index] ?? 0) ^ 1;
+  return copy;
+};
+
+const mlDsaSelfTest = (candidate: PrimitiveEngine): boolean => {
+  const seed = new Uint8Array(32).fill(7);
+  const publicKey = candidate.mlDsa65PublicKey(seed);
+  if (!digestMatches(publicKey, KAT.mlDsaPublicKeySha256)) return false;
+  const signature = candidate.mlDsa65Sign(seed, publicKey, KAT_MESSAGE, KAT_CONTEXT, new Uint8Array(32).fill(3));
+  return (
+    digestMatches(signature, KAT.mlDsaSignatureSha256) &&
+    candidate.mlDsa65Verify(publicKey, KAT_MESSAGE, KAT_CONTEXT, signature) &&
+    !candidate.mlDsa65Verify(publicKey, KAT_MESSAGE, KAT_CONTEXT, flipped(signature, 0))
+  );
+};
+
+const mlKemSelfTest = (candidate: PrimitiveEngine): boolean => {
+  const seed = new Uint8Array(64).fill(9);
+  const publicKey = candidate.mlKem768PublicKey(seed);
+  if (!digestMatches(publicKey, KAT.mlKemPublicKeySha256)) return false;
+  const encapsulated = candidate.mlKem768Encapsulate(publicKey, new Uint8Array(32).fill(3));
+  return (
+    digestMatches(encapsulated.cipherText, KAT.mlKemCipherTextSha256) &&
+    digestMatches(encapsulated.sharedSecret, KAT.mlKemSharedSha256) &&
+    digestMatches(candidate.mlKem768Decapsulate(seed, publicKey, encapsulated.cipherText), KAT.mlKemSharedSha256)
+  );
+};
+
+const ed25519SelfTest = (candidate: PrimitiveEngine): boolean => {
+  const publicKey = fromHex(KAT.ed25519PublicKey);
+  const signature = candidate.ed25519Sign(KAT_KEY, KAT_MESSAGE);
+  return (
+    matches(candidate.ed25519PublicKey(KAT_KEY), KAT.ed25519PublicKey) &&
+    matches(signature, KAT.ed25519Signature) &&
+    candidate.ed25519Verify(publicKey, KAT_MESSAGE, signature) &&
+    !candidate.ed25519Verify(publicKey, KAT_MESSAGE, flipped(signature, 63))
+  );
+};
+
+const symmetricSelfTest = (candidate: PrimitiveEngine): boolean => {
+  const nonce = new Uint8Array(12).fill(5);
+  const sealed = candidate.aes256GcmEncrypt(KAT_KEY, nonce, KAT_CONTEXT, KAT_MESSAGE);
+  return (
+    matches(candidate.sha256(KAT_MESSAGE), KAT.sha256) &&
+    digestMatches(candidate.sha512(KAT_MESSAGE), KAT.sha512Sha256) &&
+    digestMatches(candidate.hmacSha512(KAT_KEY, KAT_MESSAGE), KAT.hmacSha512Sha256) &&
+    matches(candidate.hkdfSha512(KAT_KEY, KAT_MESSAGE, KAT_CONTEXT, 40), KAT.hkdfSha512) &&
+    matches(sealed, KAT.aes256Gcm) &&
+    matches(candidate.aes256GcmDecrypt(KAT_KEY, nonce, KAT_CONTEXT, sealed), hex(KAT_MESSAGE)) &&
+    throws(() => candidate.aes256GcmDecrypt(KAT_KEY, nonce, KAT_CONTEXT, flipped(sealed, sealed.length - 1)))
+  );
+};
+
+const x25519SelfTest = (candidate: PrimitiveEngine): boolean => {
+  const other = candidate.x25519PublicKey(new Uint8Array(32).fill(9));
+  return (
+    matches(candidate.x25519PublicKey(KAT_KEY), KAT.x25519PublicKey) &&
+    digestMatches(candidate.x25519SharedSecret(KAT_KEY, other), KAT.x25519SharedSha256) &&
+    throws(() => candidate.x25519SharedSecret(KAT_KEY, new Uint8Array(32)))
+  );
+};
+
 const selfTest = (candidate: PrimitiveEngine): boolean => {
   try {
-    const dsaSeed = new Uint8Array(32).fill(7);
-    const kemSeed = new Uint8Array(64).fill(9);
-    const message = new Uint8Array([1, 2, 3]);
-    const context = new Uint8Array([4, 5]);
-    const entropy = new Uint8Array(32).fill(3);
-    const dsaPublic = candidate.mlDsa65PublicKey(dsaSeed);
-    const kemPublic = candidate.mlKem768PublicKey(kemSeed);
-    if (hex(sha256(dsaPublic)) !== KAT.mlDsaPublicKeySha256) return false;
-    if (hex(sha256(kemPublic)) !== KAT.mlKemPublicKeySha256) return false;
-    const signature = candidate.mlDsa65Sign(dsaSeed, dsaPublic, message, context, entropy);
-    if (hex(sha256(signature)) !== KAT.mlDsaSignatureSha256) return false;
-    if (!candidate.mlDsa65Verify(dsaPublic, message, context, signature)) return false;
-    signature[0] = (signature[0] ?? 0) ^ 1;
-    if (candidate.mlDsa65Verify(dsaPublic, message, context, signature)) return false;
-    const encapsulated = candidate.mlKem768Encapsulate(kemPublic, entropy);
-    if (hex(sha256(encapsulated.cipherText)) !== KAT.mlKemCipherTextSha256) return false;
-    if (hex(sha256(encapsulated.sharedSecret)) !== KAT.mlKemSharedSha256) return false;
-    if (hex(sha256(candidate.mlKem768Decapsulate(kemSeed, kemPublic, encapsulated.cipherText))) !== KAT.mlKemSharedSha256) return false;
-    if (hex(candidate.ed25519PublicKey(dsaSeed)) !== KAT.ed25519PublicKey) return false;
-    const edSignature = candidate.ed25519Sign(dsaSeed, message);
-    if (hex(edSignature) !== KAT.ed25519Signature) return false;
-    const edPublic = fromHex(KAT.ed25519PublicKey);
-    if (!candidate.ed25519Verify(edPublic, message, edSignature)) return false;
-    edSignature[63] = (edSignature[63] ?? 0) ^ 1;
-    if (candidate.ed25519Verify(edPublic, message, edSignature)) return false;
-    const key = new Uint8Array(32).fill(7);
-    const nonce = new Uint8Array(12).fill(5);
-    const aad = new Uint8Array([4, 5]);
-    if (hex(candidate.sha256(message)) !== KAT.sha256) return false;
-    if (hex(sha256(candidate.sha512(message))) !== KAT.sha512Sha256) return false;
-    if (hex(sha256(candidate.hmacSha512(key, message))) !== KAT.hmacSha512Sha256) return false;
-    if (hex(candidate.hkdfSha512(key, message, aad, 40)) !== KAT.hkdfSha512) return false;
-    const sealed = candidate.aes256GcmEncrypt(key, nonce, aad, message);
-    if (hex(sealed) !== KAT.aes256Gcm) return false;
-    if (hex(candidate.aes256GcmDecrypt(key, nonce, aad, sealed)) !== hex(message)) return false;
-    sealed[sealed.length - 1] = (sealed[sealed.length - 1] ?? 0) ^ 1;
-    if (!throws(() => candidate.aes256GcmDecrypt(key, nonce, aad, sealed))) return false;
-    if (hex(candidate.x25519PublicKey(key)) !== KAT.x25519PublicKey) return false;
-    const other = candidate.x25519PublicKey(new Uint8Array(32).fill(9));
-    if (hex(sha256(candidate.x25519SharedSecret(key, other))) !== KAT.x25519SharedSha256) return false;
-    return throws(() => candidate.x25519SharedSecret(key, new Uint8Array(32)));
+    return [mlDsaSelfTest, mlKemSelfTest, ed25519SelfTest, symmetricSelfTest, x25519SelfTest].every((check) =>
+      check(candidate),
+    );
   } catch {
     return false;
   }
