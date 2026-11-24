@@ -114,3 +114,11 @@ npm stage approve STAGE_ID
 Once approved, verify installation from the registry and the `latest` dist-tag in a clean consumer.
 If staging is wrong, reject it rather than approving and attempting to replace an immutable
 published version. A wrong public release requires a new version and an appropriate advisory.
+
+## iOS native framework
+
+`ios/EnigmCryptoNative.xcframework` is a build output, never committed. The release and staging
+workflows build it in the `ios-native` job (macOS, pinned Rust 1.99.0) after the shared
+JS→Rust vectors pass, then the packing job downloads it and refuses to pack without it, so the
+attested tarball always contains the reviewed native engine. A tarball without the framework
+still works (the library falls back to its JavaScript engine) but must not be published.

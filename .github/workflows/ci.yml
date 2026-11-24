@@ -40,3 +40,22 @@ jobs:
           name: enigm-crypto-sbom
           path: enigm-crypto.cdx.json
           if-no-files-found: error
+
+  native:
+    # The native engine must reproduce the JavaScript engine on shared vectors.
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20.19.0
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: rustup toolchain install 1.99.0 --profile minimal
+      - run: mkdir -p native/target && node --import tsx native/vectors/generate.ts > native/target/vectors.json
+      - run: cargo +1.99.0 test --manifest-path native/Cargo.toml --release --locked

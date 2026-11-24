@@ -34,9 +34,9 @@ export const createEnigmDeviceClient = (options: {
       for (const item of state.bundles) validatePrivateKemBundle(item.bundle);
       return await action(state);
     } finally {
-      wipe(state.identity.mlDsaSecretKey, state.identity.ed25519SecretKey);
+      wipe(state.identity.mlDsaSeed, state.identity.ed25519SecretKey);
       for (const item of state.bundles)
-        wipe(item.bundle.mlKemSecretKey, item.bundle.x25519SecretKey);
+        wipe(item.bundle.mlKemSeed, item.bundle.x25519SecretKey);
     }
   };
   const checkIdentity = (encoded: string, expected?: string) => {

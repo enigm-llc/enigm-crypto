@@ -12,8 +12,14 @@ ciphertext from being moved between correctly bound conversations, devices or co
 ## Identity
 
 Each device identity has independent ML-DSA-65 and Ed25519 key pairs. Its key identifier is the
-SHA-256 digest of a domain-separated transcript containing both public keys. Secret seeds and
-expanded secret keys are returned only to the caller and must remain in platform secure storage.
+SHA-256 digest of a domain-separated transcript containing both public keys. Private keys are
+held only as seeds: the 32-byte ML-DSA-65 ξ (FIPS 204), the 64-byte ML-KEM-768 `d‖z` (FIPS 203)
+and the 32-byte Ed25519/X25519 secrets. They are returned only to the caller and must remain in
+platform secure storage. Each signature or decapsulation re-derives the expanded key in memory,
+checks that it reproduces the stored public key (`EnigmKeyError` `KEY_MISMATCH` otherwise) and
+wipes it. Expanded ML-DSA/ML-KEM private keys from earlier candidates are rejected with
+`KEY_FORMAT_CHANGED`; there is no migration — generate and publish new keys. Public keys,
+signatures, ciphertexts and every wire format are unchanged.
 
 ## KEM bundles
 

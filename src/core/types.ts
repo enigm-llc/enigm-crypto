@@ -14,8 +14,12 @@ export type PublicIdentity = {
   ed25519PublicKey: Uint8Array;
 };
 
+/**
+ * Private keys are stored as seeds: `mlDsaSeed` is the 32-byte FIPS 204 ξ and
+ * `ed25519SecretKey` the 32-byte RFC 8032 seed. Expanded ML-DSA keys are not accepted.
+ */
 export type PrivateIdentity = PublicIdentity & {
-  mlDsaSecretKey: Uint8Array;
+  mlDsaSeed: Uint8Array;
   ed25519SecretKey: Uint8Array;
 };
 
@@ -30,8 +34,12 @@ export type PublicKemBundle = {
   signature: HybridSignature;
 };
 
+/**
+ * `mlKemSeed` is the 64-byte FIPS 203 seed `d‖z`; `x25519SecretKey` the 32-byte RFC 7748
+ * scalar. Expanded (2400-byte) ML-KEM decapsulation keys are not accepted.
+ */
 export type PrivateKemBundle = PublicKemBundle & {
-  mlKemSecretKey: Uint8Array;
+  mlKemSeed: Uint8Array;
   x25519SecretKey: Uint8Array;
 };
 

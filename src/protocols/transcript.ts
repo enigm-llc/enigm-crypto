@@ -1,5 +1,4 @@
-import { sha256 } from '@noble/hashes/sha2.js';
-
+import { sha256 } from '../core/primitives.js';
 import { CIPHER_SUITE, PROTOCOL_VERSION, type HybridEnvelope, type PublicKemBundle } from '../core/types.js';
 import { frame, u64, utf8 } from '../core/bytes.js';
 

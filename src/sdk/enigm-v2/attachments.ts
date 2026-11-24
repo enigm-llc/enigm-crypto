@@ -1,4 +1,4 @@
-import { sha256 } from "@noble/hashes/sha2.js";
+import { sha256 } from "../../core/primitives.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { utf8, wipe, type RandomSource } from "../../core/index.js";
 import { decodeUtf8 } from "../../core/utf8.js";

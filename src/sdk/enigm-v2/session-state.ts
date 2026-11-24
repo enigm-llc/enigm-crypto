@@ -3,7 +3,7 @@ import type {
   SessionRole,
   SessionState,
 } from "../../core/types.js";
-import { sha256 } from "@noble/hashes/sha2.js";
+import { sha256 } from "../../core/primitives.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { assertWellFormedUtf16, utf8, equal, wipe, type RandomSource } from "../../core/index.js";
 import { deriveExportKey } from "../../protocols/envelope.js";

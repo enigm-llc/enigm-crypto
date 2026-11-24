@@ -5,3 +5,6 @@ coverage/
 *.tgz
 *.log
 .DS_Store
+
+# Built by scripts/build-ios-native.sh (release CI); never committed.
+ios/*.xcframework/

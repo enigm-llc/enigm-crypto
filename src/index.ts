@@ -15,3 +15,6 @@ export * from './types.js';
 export * from './sdk/index.js';
 export * from './core/base64.js';
 export { decodeUtf8 } from './core/utf8.js';
+export * from './core/errors.js';
+export { cryptoBackend, type CryptoBackend } from './core/engine.js';
+export { clearVerificationCache } from './primitives/kem.js';

@@ -1,5 +1,4 @@
-import { sha256 } from '@noble/hashes/sha2.js';
-
+import { sha256 } from '../core/primitives.js';
 import { assertLength, clone, equal, frame, u64, utf8 } from '../core/bytes.js';
 import { signHybrid, verifyHybrid } from '../primitives/identity.js';
 import type { HybridSignature, PrivateIdentity, PublicIdentity } from '../core/types.js';

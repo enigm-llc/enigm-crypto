@@ -62,9 +62,9 @@ try {
   });
   if (!equal(original, plaintext)) throw new Error('Round trip failed');
 } finally {
-  wipe(original, sender.mlDsaSecretKey, sender.ed25519SecretKey,
-    recipient.mlDsaSecretKey, recipient.ed25519SecretKey,
-    bundle.mlKemSecretKey, bundle.x25519SecretKey);
+  wipe(original, sender.mlDsaSeed, sender.ed25519SecretKey,
+    recipient.mlDsaSeed, recipient.ed25519SecretKey,
+    bundle.mlKemSeed, bundle.x25519SecretKey);
   if (plaintext) wipe(plaintext);
 }
 ```
