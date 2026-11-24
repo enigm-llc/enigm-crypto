@@ -25,7 +25,7 @@ jobs:
       - run: rustup toolchain install 1.99.0 --profile minimal --target aarch64-apple-ios,aarch64-apple-ios-sim
       - run: mkdir -p native/target && node --import tsx native/vectors/generate.ts > native/target/vectors.json
       - run: cargo +1.99.0 test --manifest-path native/Cargo.toml --release --locked
-      - run: scripts/build-ios-native.sh
+      - run: bash scripts/build-ios-native.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ios-native

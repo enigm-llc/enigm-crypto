@@ -99,7 +99,7 @@
     "prepack": "npm run build",
     "test:package": "npm run build && node scripts/verify-package-consumers.mjs",
     "release:check": "node scripts/verify-release.mjs && npm run build && node scripts/verify-public-package.mjs",
-    "build:ios-native": "scripts/build-ios-native.sh",
+    "build:ios-native": "bash scripts/build-ios-native.sh",
     "test:native": "mkdir -p native/target && node --import tsx native/vectors/generate.ts > native/target/vectors.json && cargo +1.99.0 test --manifest-path native/Cargo.toml --release --locked"
   },
   "engines": {
