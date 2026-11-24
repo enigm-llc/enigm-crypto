@@ -247,7 +247,7 @@ const KAT = {
   mlKemPublicKeySha256: '99e97dc2aaa8cb2048bbd784634a990a80afe28df11fa9141cb3609aad581a27',
   mlDsaSignatureSha256: '244d678feff72cbb538fa083c2e8c45aef1bc1a45fa979a102c386282a3508ad',
   mlKemCipherTextSha256: 'bf72398b30305acc0891b6d30b4b59af0989c40e7a8202ee1f95e1a7e39b5972',
-  mlKemSharedSecret: '972522ce4ae6b0b8b78c33cac9b937a829778bd3afc1fe49b6790070c0e954b5',
+  mlKemSharedSha256: '79c72e35c4fa66ac1e353f892d8c7539dd71e0ba866158932896aaed3ff741c9',
   ed25519PublicKey: 'ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c',
   ed25519Signature:
     '83998e719947612d0e82d427472c685a64b14d9aea67968cbcc39733f27376f3b8ea9858c24e061feb8bcdefce93aa921a6bc8ee1cab17f68d5d1ffc0dc2d800',
@@ -257,7 +257,7 @@ const KAT = {
   hkdfSha512: '34d7e517746e0ae9ce8d557baf6181a822f6f433ef09480dbb52ad6d07ddb0e3468efdf1c3741c22',
   aes256Gcm: 'e3f3840076bbe5c4e0cc5bc908aa7c7b8c4a4c',
   x25519PublicKey: '13be4feaeaf204c7fd3358fc9c00721881d174278128227ec674f37f7fe97b6d',
-  x25519SharedSecret: '2ffe325b2a26611bf1911325d4a62b33749b8f350d0e88ba91e316acaae66554',
+  x25519SharedSha256: '0f098ac422de69ef39f99f829db166efa16678832731f6938145487bc1bf002b',
 } as const;
 
 const throws = (operation: () => unknown): boolean => {
@@ -299,8 +299,8 @@ const selfTest = (candidate: PrimitiveEngine): boolean => {
     if (candidate.mlDsa65Verify(dsaPublic, message, context, signature)) return false;
     const encapsulated = candidate.mlKem768Encapsulate(kemPublic, entropy);
     if (hex(sha256(encapsulated.cipherText)) !== KAT.mlKemCipherTextSha256) return false;
-    if (hex(encapsulated.sharedSecret) !== KAT.mlKemSharedSecret) return false;
-    if (hex(candidate.mlKem768Decapsulate(kemSeed, kemPublic, encapsulated.cipherText)) !== KAT.mlKemSharedSecret) return false;
+    if (hex(sha256(encapsulated.sharedSecret)) !== KAT.mlKemSharedSha256) return false;
+    if (hex(sha256(candidate.mlKem768Decapsulate(kemSeed, kemPublic, encapsulated.cipherText))) !== KAT.mlKemSharedSha256) return false;
     if (hex(candidate.ed25519PublicKey(dsaSeed)) !== KAT.ed25519PublicKey) return false;
     const edSignature = candidate.ed25519Sign(dsaSeed, message);
     if (hex(edSignature) !== KAT.ed25519Signature) return false;
@@ -322,7 +322,7 @@ const selfTest = (candidate: PrimitiveEngine): boolean => {
     if (!throws(() => candidate.aes256GcmDecrypt(key, nonce, aad, sealed))) return false;
     if (hex(candidate.x25519PublicKey(key)) !== KAT.x25519PublicKey) return false;
     const other = candidate.x25519PublicKey(new Uint8Array(32).fill(9));
-    if (hex(candidate.x25519SharedSecret(key, other)) !== KAT.x25519SharedSecret) return false;
+    if (hex(sha256(candidate.x25519SharedSecret(key, other))) !== KAT.x25519SharedSha256) return false;
     return throws(() => candidate.x25519SharedSecret(key, new Uint8Array(32)));
   } catch {
     return false;
