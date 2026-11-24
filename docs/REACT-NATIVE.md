@@ -40,7 +40,7 @@ Measured on a physical iPhone (Hermes, debug build, 25 envelopes of 64 bytes): `
 versus 5.5 s with the JavaScript engine, `seal` 36 ms versus 8.7 s, identity plus KEM bundle
 generation 3 ms versus 0.5 s. With fixed entropy both engines produced identical identity, bundle
 and envelope bytes and opened each other's envelopes. Android is not yet shipped and uses the
-JavaScript engine.
+JavaScript engine; see the Android plan in the repository (`docs/ANDROID-NATIVE-PLAN.md`).
 
 Maintainers rebuild the framework with `npm run build:ios-native` (macOS, Xcode, Rust 1.99.0).
 The framework is a build output: it is produced for the release tarball and is not committed.
