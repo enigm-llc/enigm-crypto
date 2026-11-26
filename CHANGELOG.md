@@ -2,6 +2,10 @@
 
 ## 1.0.0 — Unreleased
 
+- Normalize generated bundles to remove the no-op HMAC clone self-assignment and the
+  unreachable engine override left after test-hook tree shaking. Cryptographic source,
+  dependency bytes, native binaries and test hooks remain unchanged.
+
 - Add modular core, primitives, protocols, codecs and SDK imports while preserving root exports.
 - Add bundled ESM, CommonJS and React Native entry points with internal strict UTF-8 support.
 - Add explicit secure-storage/device-key/entropy/transport integration contracts and Enigm V2
